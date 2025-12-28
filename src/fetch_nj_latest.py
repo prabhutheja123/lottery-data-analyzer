@@ -6,7 +6,7 @@ from pathlib import Path
 POWERBALL_URL = "https://data.ny.gov/api/views/d6yy-54nr/rows.csv?accessType=DOWNLOAD"
 MEGA_URL      = "https://data.ny.gov/api/views/5xaw-6ayf/rows.csv?accessType=DOWNLOAD"
 
-OUT_DIR = Path("data") / "nj"
+OUT_DIR = Path("data/nj")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 PB_FILE   = OUT_DIR / "powerball.csv"
@@ -19,14 +19,7 @@ def download(url):
         return r.read().decode("utf-8", errors="replace")
 
 
-def pick_col(row, candidates):
-    """Return the first existing column name from candidates."""
-    for c in candidates:
-        if c in row and row[c]:
-            return row[c]
-    return ""
-
-
+# ---------------- POWERBALL ----------------
 def save_powerball(text):
     reader = csv.DictReader(io.StringIO(text))
     with PB_FILE.open("w", newline="", encoding="utf-8") as f:
@@ -35,19 +28,21 @@ def save_powerball(text):
 
         count = 0
         for r in reader:
-            draw_date = pick_col(r, ["Draw Date", "draw_date", "Draw_Date"])
-            winning   = pick_col(r, ["Winning Numbers", "winning_numbers", "Winning_Numbers"])
-
-            nums = winning.split()
-            if len(nums) != 6 or not draw_date:
+            nums = r["Winning Numbers"].split()
+            if len(nums) != 6:
                 continue
 
-            w.writerow([draw_date.split("T")[0], " ".join(nums[:5]), nums[5]])
+            w.writerow([
+                r["Draw Date"].split("T")[0],
+                " ".join(nums[:5]),
+                nums[5]
+            ])
             count += 1
 
-    print("Powerball rows written:", count)
+    print(f"✅ Powerball rows written: {count}")
 
 
+# ---------------- MEGA MILLIONS ----------------
 def save_mega(text):
     reader = csv.DictReader(io.StringIO(text))
     with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
@@ -56,25 +51,19 @@ def save_mega(text):
 
         count = 0
         for r in reader:
-            draw_date = pick_col(r, ["Draw Date", "draw_date", "Draw_Date"])
-            winning   = pick_col(r, ["Winning Numbers", "winning_numbers", "Winning_Numbers"])
-
-            # multiplier column name differs across datasets
-            multiplier = pick_col(r, ["Multiplier", "multiplier", "Megaplier", "megaplier", "Mega Multiplier"])
-
-            nums = winning.split()
-            if len(nums) != 6 or not draw_date:
+            nums = r["winning_numbers"].split()
+            if len(nums) != 6:
                 continue
 
             w.writerow([
-                draw_date.split("T")[0],
+                r["draw_date"],
                 " ".join(nums[:5]),
                 nums[5],
-                multiplier if multiplier else "N/A"
+                r.get("multiplier", "N/A")
             ])
             count += 1
 
-    print("Mega Millions rows written:", count)
+    print(f"✅ Mega Millions rows written: {count}")
 
 
 def main():
@@ -82,7 +71,7 @@ def main():
     save_powerball(download(POWERBALL_URL))
     print("Saved:", PB_FILE)
 
-    print("Fetching Mega Millions...")
+    print("\nFetching Mega Millions...")
     save_mega(download(MEGA_URL))
     print("Saved:", MEGA_FILE)
 
