@@ -49,21 +49,39 @@ def save_powerball(text):
 def save_mega(text):
     reader = csv.DictReader(io.StringIO(text))
 
+    # DEBUG: show the real Mega CSV columns in Actions logs
+    print("Mega CSV columns:", reader.fieldnames)
+
     with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["draw_date", "white_numbers", "mega_ball", "multiplier"])
 
         count = 0
         for r in reader:
-            nums = r["Winning Numbers"].split()
-            if len(nums) != 6:
+            # Detect correct column names dynamically (Mega dataset is inconsistent)
+            draw_date = (
+                r.get("Draw Date") or r.get("draw_date") or r.get("Draw_Date") or r.get("DRAW DATE") or ""
+            ).strip()
+
+            winning = (
+                r.get("Winning Numbers") or r.get("winning_numbers") or r.get("Winning_Numbers")
+                or r.get("WINNING NUMBERS") or ""
+            ).strip()
+
+            multiplier = (
+                r.get("Multiplier") or r.get("multiplier") or r.get("Megaplier") or r.get("megaplier")
+                or r.get("MEGAPLIER") or ""
+            ).strip()
+
+            nums = winning.split()
+            if len(nums) != 6 or not draw_date:
                 continue
 
             w.writerow([
-                r["Draw Date"].split("T")[0],
+                draw_date.split("T")[0],
                 " ".join(nums[:5]),
                 nums[5],
-                r.get("Multiplier", "N/A")
+                multiplier if multiplier else "N/A"
             ])
             count += 1
 
