@@ -13,8 +13,11 @@ def read_numbers(csv_path):
 def main():
     numbers = read_numbers("data/sample.csv")
     freq = Counter(numbers)
-    for num, count in freq.most_common():
-        print(f"{num} -> {count} times")
+    print("Top 10 Most Frequent Numbers")
+print("-" * 35)
+
+for num, count in freq.most_common(10):
+    print(f"{num} -> {count} times")
 
 if __name__ == "__main__":
     main()
