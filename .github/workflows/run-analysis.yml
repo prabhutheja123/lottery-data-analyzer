@@ -1,4 +1,4 @@
-name: Run Lottery Analysis
+- name: Run Lottery Analysis
 
 on:
   push:
