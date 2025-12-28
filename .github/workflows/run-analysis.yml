@@ -21,14 +21,16 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
+          pip install -r requirements.txt || true
 
       - name: Fetch NJ latest results
         run: |
           python src/fetch_nj_latest.py
 
-      - name: Run lottery analysis
+      - name: Analyze Powerball
         run: |
-          python src/analyze.py
+          python src/analyze_powerball.py
+
+      - name: Analyze Mega Millions
+        run: |
+          python src/analyze_mega.py
