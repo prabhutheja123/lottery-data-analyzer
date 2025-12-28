@@ -2,7 +2,7 @@ import csv
 import io
 import urllib.request
 from pathlib import Path
-
+p
 POWERBALL_URL = "https://data.ny.gov/api/views/d6yy-54nr/rows.csv?accessType=DOWNLOAD"
 MEGA_URL      = "https://data.ny.gov/api/views/5xaw-6ayf/rows.csv?accessType=DOWNLOAD"
 
@@ -42,7 +42,7 @@ def save_powerball(text):
     print(f"✅ Powerball rows written: {count}")
 
 
-# ---------------- MEGA MILLIONS ----------------
+# ---------------- MEGA MILLIONS (FIXED) ----------------
 def save_mega(text):
     reader = csv.DictReader(io.StringIO(text))
     with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
@@ -51,15 +51,15 @@ def save_mega(text):
 
         count = 0
         for r in reader:
-            nums = r["winning_numbers"].split()
+            nums = r["Winning Numbers"].split()
             if len(nums) != 6:
                 continue
 
             w.writerow([
-                r["draw_date"],
+                r["Draw Date"].split("T")[0],
                 " ".join(nums[:5]),
                 nums[5],
-                r.get("multiplier", "N/A")
+                r.get("Multiplier", "N/A")
             ])
             count += 1
 
