@@ -2,13 +2,9 @@ from collections import Counter
 import csv
 from datetime import datetime
 
-INPUT_CSV = "data/nj/powerball.csv"   # created by fetch script
+INPUT_CSV = "data/nj/powerball.csv"
 
 def parse_draw_date(date_str: str) -> datetime:
-    """
-    Supports common date formats that might appear in the CSV.
-    Your log shows dates like: 12/31/2022
-    """
     for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
         try:
             return datetime.strptime(date_str.strip(), fmt)
@@ -34,24 +30,17 @@ def main():
     print(f"Total draws loaded: {len(draws)}")
     print()
 
-    # ✅ Latest 10 winning draws (true date sort)
+    # ===== Latest 10 draws (correctly sorted) =====
     draws_sorted = sorted(draws, key=lambda x: parse_draw_date(x[0]), reverse=True)
     latest_10 = draws_sorted[:10]
 
-    # Extra proof: show the newest date in the file
-    newest_date = parse_draw_date(latest_10[0][0]) if latest_10 else None
-    if newest_date:
-        print("Latest date in file:", newest_date.strftime("%m/%d/%Y"))
-        print()
-
     print("Latest 10 winning draws")
-    print("-" * 35)
+    print("-" * 40)
     for draw_date, white, pb in latest_10:
-        white_str = " ".join(map(str, white))
-        print(f"{draw_date} | White: {white_str} | PB: {pb}")
+        print(f"{draw_date} | White: {' '.join(map(str, white))} | PB: {pb}")
     print()
 
-    # ✅ Frequency counts (SEPARATE!)
+    # ===== Collect numbers =====
     white_all = []
     pb_all = []
 
@@ -62,16 +51,18 @@ def main():
     white_freq = Counter(white_all)
     pb_freq = Counter(pb_all)
 
-    print("Top 10 repeated WHITE BALL numbers (1–69)")
-    print("-" * 45)
-    for num, count in white_freq.most_common(10):
-        print(f"{num} -> {count} times")
+    # ===== FULL WHITE BALL DISTRIBUTION =====
+    print("WHITE BALL FREQUENCY (1–69)")
+    print("-" * 40)
+    for num in range(1, 70):
+        print(f"{num:2d} -> {white_freq.get(num, 0)} times")
     print()
 
-    print("Top 10 repeated POWERBALL numbers (1–26)")
-    print("-" * 45)
-    for num, count in pb_freq.most_common(10):
-        print(f"{num} -> {count} times")
+    # ===== FULL POWERBALL DISTRIBUTION =====
+    print("POWERBALL FREQUENCY (1–26)")
+    print("-" * 40)
+    for num in range(1, 27):
+        print(f"{num:2d} -> {pb_freq.get(num, 0)} times")
 
 if __name__ == "__main__":
     main()
