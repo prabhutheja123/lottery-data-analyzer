@@ -1,6 +1,9 @@
 import os
+import sys
 from collections import Counter
-from common import parse_date, read_csv
+
+sys.path.append("src")
+from common import parse_date, read_csv  # noqa: E402
 
 PB_CSV = "data/nj/powerball.csv"
 
@@ -27,7 +30,7 @@ def main():
 
     for r in rows:
         try:
-            draw_date = r["draw_date"]
+            draw_date = (r.get("draw_date") or "").strip()
             white_str = (r.get("white_numbers") or "").strip()
             pb_str = (r.get("powerball") or "").strip()
 
@@ -74,7 +77,6 @@ def main():
     pc = Counter(pb_all)
     for i in range(1, 27):
         print(f"{i:2d} -> {pc.get(i, 0)} times")
-
 
 if __name__ == "__main__":
     main()
