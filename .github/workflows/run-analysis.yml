@@ -20,6 +20,7 @@ jobs:
 
       - name: Fetch NJ lottery data
         run: |
+          set -e
           python src/fetch_nj_latest.py
 
       - name: Debug folders after fetch
@@ -36,3 +37,9 @@ jobs:
       - name: Analyze Mega Millions
         run: |
           python src/analyze_mega.py
+
+      - name: Upload generated CSVs
+        uses: actions/upload-artifact@v4
+        with:
+          name: nj-lottery-csv
+          path: data/nj/
