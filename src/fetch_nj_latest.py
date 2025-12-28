@@ -1,3 +1,4 @@
+import re
 import csv
 import io
 import urllib.request
@@ -48,8 +49,6 @@ def save_powerball(text):
 
 def save_mega(text):
     reader = csv.DictReader(io.StringIO(text))
-
-    # DEBUG: show the real Mega CSV columns in Actions logs
     print("Mega CSV columns:", reader.fieldnames)
 
     with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
@@ -58,45 +57,32 @@ def save_mega(text):
 
         count = 0
         for r in reader:
-            # Detect correct column names dynamically (Mega dataset is inconsistent)
-            draw_date = (
-                r.get("Draw Date") or r.get("draw_date") or r.get("Draw_Date") or r.get("DRAW DATE") or ""
-            ).strip()
+            draw_date = (r.get("Draw Date") or "").strip()
+            winning = (r.get("Winning Numbers") or "").strip()
+            mega_ball = (r.get("Mega Ball") or "").strip()
+            multiplier = (r.get("Multiplier") or "").strip() or "N/A"
 
-            winning = (
-                r.get("Winning Numbers") or r.get("winning_numbers") or r.get("Winning_Numbers")
-                or r.get("WINNING NUMBERS") or ""
-            ).strip()
-
-            multiplier = (
-                r.get("Multiplier") or r.get("multiplier") or r.get("Megaplier") or r.get("megaplier")
-                or r.get("MEGAPLIER") or ""
-            ).strip()
-
-            nums = winning.split()
-            if len(nums) != 6 or not draw_date:
+            if not draw_date or not winning or not mega_ball:
                 continue
+
+            # Winning Numbers contains ONLY 5 white balls in this dataset
+            white_nums = re.findall(r"\d+", winning)
+            if len(white_nums) != 5:
+                continue
+
+            # Mega Ball is separate column
+            if not mega_ball.isdigit():
+                mb = re.findall(r"\d+", mega_ball)
+                if not mb:
+                    continue
+                mega_ball = mb[0]
 
             w.writerow([
                 draw_date.split("T")[0],
-                " ".join(nums[:5]),
-                nums[5],
-                multiplier if multiplier else "N/A"
+                " ".join(white_nums),
+                mega_ball,
+                multiplier
             ])
             count += 1
 
     print(f"✅ Mega Millions rows written: {count}")
-
-
-def main():
-    print("Fetching Powerball...")
-    save_powerball(download(POWERBALL_URL))
-    print("Saved:", PB_FILE)
-
-    print("\nFetching Mega Millions...")
-    save_mega(download(MEGA_URL))
-    print("Saved:", MEGA_FILE)
-
-
-if __name__ == "__main__":
-    main()
