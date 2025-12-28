@@ -23,18 +23,45 @@ def save_powerball(text):
     with PB_FILE.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["draw_date", "white_numbers", "powerball"])
+
         for r in reader:
-            nums = r["Winning Numbers"].split()
-            w.writerow([r["Draw Date"].split("T")[0], " ".join(nums[:5]), nums[5]])
+            draw_date = (r.get("Draw Date") or "").strip()
+            winning = (r.get("Winning Numbers") or "").strip()
+
+            nums = winning.split()
+            # ✅ safety: must have 6 numbers (5 white + PB)
+            if len(nums) != 6 or not draw_date:
+                continue
+
+            w.writerow([
+                draw_date.split("T")[0],
+                " ".join(nums[:5]),
+                nums[5]
+            ])
 
 def save_mega(text):
     reader = csv.DictReader(io.StringIO(text))
     with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["draw_date", "white_numbers", "mega_ball"])
+        # ✅ added multiplier column
+        w.writerow(["draw_date", "white_numbers", "mega_ball", "multiplier"])
+
         for r in reader:
-            nums = r["Winning Numbers"].split()
-            w.writerow([r["Draw Date"].split("T")[0], " ".join(nums[:5]), nums[5]])
+            draw_date = (r.get("Draw Date") or "").strip()
+            winning = (r.get("Winning Numbers") or "").strip()
+            multiplier = (r.get("Multiplier") or "").strip()  # ✅ Mega multiplier
+
+            nums = winning.split()
+            # ✅ safety: must have 6 numbers (5 white + Mega Ball)
+            if len(nums) != 6 or not draw_date:
+                continue
+
+            w.writerow([
+                draw_date.split("T")[0],
+                " ".join(nums[:5]),
+                nums[5],
+                multiplier if multiplier else "NA"
+            ])
 
 def main():
     print("Fetching Powerball...")
