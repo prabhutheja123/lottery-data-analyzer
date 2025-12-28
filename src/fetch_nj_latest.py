@@ -2,7 +2,8 @@ import csv
 import io
 import urllib.request
 from pathlib import Path
-p
+
+# NY Open Data CSV endpoints
 POWERBALL_URL = "https://data.ny.gov/api/views/d6yy-54nr/rows.csv?accessType=DOWNLOAD"
 MEGA_URL      = "https://data.ny.gov/api/views/5xaw-6ayf/rows.csv?accessType=DOWNLOAD"
 
@@ -14,14 +15,17 @@ MEGA_FILE = OUT_DIR / "mega_millions.csv"
 
 
 def download(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0"}
+    )
     with urllib.request.urlopen(req, timeout=60) as r:
         return r.read().decode("utf-8", errors="replace")
 
 
-# ---------------- POWERBALL ----------------
 def save_powerball(text):
     reader = csv.DictReader(io.StringIO(text))
+
     with PB_FILE.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["draw_date", "white_numbers", "powerball"])
@@ -42,9 +46,9 @@ def save_powerball(text):
     print(f"✅ Powerball rows written: {count}")
 
 
-# ---------------- MEGA MILLIONS (FIXED) ----------------
 def save_mega(text):
     reader = csv.DictReader(io.StringIO(text))
+
     with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["draw_date", "white_numbers", "mega_ball", "multiplier"])
