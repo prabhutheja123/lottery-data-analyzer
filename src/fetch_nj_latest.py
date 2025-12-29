@@ -98,6 +98,8 @@ def save_pick6(html: str):
     If parsing fails (0 rows), save raw HTML for debugging:
       data/nj/pick6_raw.html
     """
+    # ✅ Ensure output directory exists every time
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     def to_iso(mmddyyyy: str) -> str:
         mm, dd, yyyy = mmddyyyy.split("/")
@@ -113,39 +115,57 @@ def save_pick6(html: str):
         re.IGNORECASE | re.DOTALL
     )
 
-    matches = list(pattern.finditer(html))
+    count = 0
+    seen = set()
 
-    with PICK6_FILE.open("w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
+    try:
+        matches = list(pattern.finditer(html))
 
-        count = 0
-        seen = set()
+        # ✅ ALWAYS create the CSV file (even if no matches)
+        with PICK6_FILE.open("w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
 
-        for m in matches:
-            raw_date = m.group("date").strip()
-            main_nums = re.findall(r"\d+", m.group("main"))
-            dp_nums = re.findall(r"\d+", m.group("dp"))
+            for m in matches:
+                raw_date = (m.group("date") or "").strip()
+                main_nums = re.findall(r"\d+", m.group("main") or "")
+                dp_nums = re.findall(r"\d+", m.group("dp") or "")
 
-            if len(main_nums) != 6 or len(dp_nums) != 6:
-                continue
+                if len(main_nums) != 6 or len(dp_nums) != 6:
+                    continue
 
-            draw_date = to_iso(raw_date)
-            main_str = " ".join(main_nums)
-            dp_str = " ".join(dp_nums)
+                draw_date = to_iso(raw_date)
+                main_str = " ".join(main_nums)
+                dp_str = " ".join(dp_nums)
 
-            key = (draw_date, main_str, dp_str)
-            if key in seen:
-                continue
-            seen.add(key)
+                key = (draw_date, main_str, dp_str)
+                if key in seen:
+                    continue
+                seen.add(key)
 
-            w.writerow([draw_date, main_str, dp_str])
-            count += 1
+                w.writerow([draw_date, main_str, dp_str])
+                count += 1
 
+    except Exception as e:
+        # ✅ Never break the pipeline because Pick6 parsing failed
+        # Still ensure CSV exists with headers
+        with PICK6_FILE.open("w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
+
+        raw_path = OUT_DIR / "pick6_raw.html"
+        raw_path.write_text(html, encoding="utf-8", errors="replace")
+        print("⚠️ Pick-6 parsing crashed, but CSV header was created.")
+        print("Error:", repr(e))
+        print("✅ Debug saved:", raw_path)
+        print(f"✅ Pick-6 rows written: 0")
+        return
+
+    # If 0 rows, save debug HTML (most likely the site changed / JS-rendered)
     if count == 0:
         raw_path = OUT_DIR / "pick6_raw.html"
         raw_path.write_text(html, encoding="utf-8", errors="replace")
-        print("⚠️ Pick-6 parse returned 0 rows.")
+        print("⚠️ Pick-6 parse returned 0 rows (site may be JS-rendered).")
         print("✅ Debug saved:", raw_path)
 
     print(f"✅ Pick-6 rows written: {count}")
