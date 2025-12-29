@@ -95,23 +95,14 @@ def save_pick6(html: str):
       - main_numbers (6 nums)
       - double_play_numbers (6 nums)
 
-    If parsing fails (0 rows), we save raw HTML for debugging:
+    If parsing fails (0 rows), save raw HTML for debugging:
       data/nj/pick6_raw.html
     """
 
     def to_iso(mmddyyyy: str) -> str:
-        # "08/30/2025" -> "2025-08-30"
         mm, dd, yyyy = mmddyyyy.split("/")
         return f"{yyyy}-{mm}-{dd}"
 
-    # Accept a LOT of variations:
-    # - date may be with or without dot after it
-    # - DP label may be: "Double Play", "Double Play®", "(Double Play)", etc.
-    # - numbers may be separated by spaces/commas
-    #
-    # Strategy:
-    #   Find: date + 6 numbers + DP label somewhere near + 6 numbers
-    #
     pattern = re.compile(
         r"(?P<date>\d{2}/\d{2}/\d{4})\s*\.?\s*"
         r"(?P<main>\d{1,2}(?:[,\s]+\d{1,2}){5})"
@@ -124,7 +115,6 @@ def save_pick6(html: str):
 
     matches = list(pattern.finditer(html))
 
-    # Write CSV
     with PICK6_FILE.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
@@ -140,10 +130,7 @@ def save_pick6(html: str):
             if len(main_nums) != 6 or len(dp_nums) != 6:
                 continue
 
-            # Convert date to ISO for consistency with other files
             draw_date = to_iso(raw_date)
-
-            # Join normalized numbers (space-separated)
             main_str = " ".join(main_nums)
             dp_str = " ".join(dp_nums)
 
@@ -156,11 +143,9 @@ def save_pick6(html: str):
             count += 1
 
     if count == 0:
-        # Debug: save raw page content so we can adjust parser when site changes
         raw_path = OUT_DIR / "pick6_raw.html"
         raw_path.write_text(html, encoding="utf-8", errors="replace")
         print("⚠️ Pick-6 parse returned 0 rows.")
         print("✅ Debug saved:", raw_path)
-        print("✅ Tip: Open that file to update regex/parser if the site layout changed.")
 
     print(f"✅ Pick-6 rows written: {count}")
