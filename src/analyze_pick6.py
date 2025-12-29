@@ -10,18 +10,7 @@ REPORTS_DIR = Path("reports")
 
 
 def parse_numbers(s: str) -> list[int]:
-    """
-    Parses numbers from a string that may contain spaces/commas/dashes/pipes.
-    Examples:
-      "1 2 3 4 5 6"
-      "1,2,3,4,5,6"
-      "1-2-3-4-5-6"
-      "1 | 2 | 3 | 4 | 5 | 6"
-    """
-    if not s:
-        return []
-    parts = re.findall(r"\d+", s)
-    return [int(x) for x in parts]
+    return [int(x) for x in re.findall(r"\d+", s or "")]
 
 
 def in_range(nums: list[int], lo: int, hi: int) -> bool:
@@ -51,7 +40,7 @@ def main(top_n: int = 15) -> None:
         print("❌ ERROR: pick6.csv exists but has 0 rows.")
         return
 
-    draws: list[tuple[str, list[int], list[int]]] = []
+    draws = []
     bad = 0
 
     for r in rows:
@@ -67,12 +56,11 @@ def main(top_n: int = 15) -> None:
             main_nums = parse_numbers(main_str)
             dp_nums = parse_numbers(dp_str)
 
-            # Pick-6 should be exactly 6 numbers each
             if len(main_nums) != 6 or len(dp_nums) != 6:
                 bad += 1
                 continue
 
-            # NJ Pick-6 is 1–46 (based on your print range)
+            # NJ Pick-6: 1–46 (your expected range)
             if not in_range(main_nums, 1, 46) or not in_range(dp_nums, 1, 46):
                 bad += 1
                 continue
@@ -96,9 +84,8 @@ def main(top_n: int = 15) -> None:
     for d, main_nums, dp_nums in draws[:10]:
         print(f"{d} | Main: {' '.join(map(str, main_nums))} | DP: {' '.join(map(str, dp_nums))}")
 
-    # Frequency counts (separate)
-    main_all: list[int] = []
-    dp_all: list[int] = []
+    main_all = []
+    dp_all = []
     for _, main_nums, dp_nums in draws:
         main_all.extend(main_nums)
         dp_all.extend(dp_nums)
@@ -116,7 +103,6 @@ def main(top_n: int = 15) -> None:
     for n, c in dc.most_common(top_n):
         print(f"{n:2d} -> {c} times")
 
-    # Full distribution (1–46) to CSV reports
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     write_frequency_csv(REPORTS_DIR / "pick6_main_frequency.csv", mc, 1, 46)
     write_frequency_csv(REPORTS_DIR / "pick6_double_play_frequency.csv", dc, 1, 46)
