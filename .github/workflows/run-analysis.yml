@@ -26,6 +26,8 @@ jobs:
         run: |
           echo "== LIST data directory =="
           ls -R data || true
+          echo "== LIST reports directory =="
+          ls -R reports || true
           echo "== Current directory =="
           pwd
 
@@ -40,3 +42,12 @@ jobs:
       - name: Analyze Pick 6
         run: |
           python src/analyze_pick6.py
+
+      - name: Upload outputs (reports + debug HTML)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lottery-outputs
+          path: |
+            reports
+            data/nj/pick6_raw.html
