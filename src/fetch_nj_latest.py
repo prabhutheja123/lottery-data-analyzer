@@ -86,61 +86,81 @@ def save_mega(text):
     print(f"✅ Mega Millions rows written: {count}")
 
 
-def save_pick6(html):
+def save_pick6(html: str):
     """
     Parse Pick-6 + Double Play from the NJ Lottery HTML page.
-    We extract:
-      - draw_date (MM/DD/YYYY)
-      - 6 main numbers
-      - 6 double play numbers
+
+    Output columns:
+      - draw_date (YYYY-MM-DD)
+      - main_numbers (6 nums)
+      - double_play_numbers (6 nums)
+
+    If parsing fails (0 rows), we save raw HTML for debugging:
+      data/nj/pick6_raw.html
     """
-    # This regex tries to find patterns like:
-    # 08/30/2025. 03 04 23 40 42 45 ... Double Play ... 02 06 30 32 38 45
+
+    def to_iso(mmddyyyy: str) -> str:
+        # "08/30/2025" -> "2025-08-30"
+        mm, dd, yyyy = mmddyyyy.split("/")
+        return f"{yyyy}-{mm}-{dd}"
+
+    # Accept a LOT of variations:
+    # - date may be with or without dot after it
+    # - DP label may be: "Double Play", "Double Play®", "(Double Play)", etc.
+    # - numbers may be separated by spaces/commas
+    #
+    # Strategy:
+    #   Find: date + 6 numbers + DP label somewhere near + 6 numbers
+    #
     pattern = re.compile(
-        r"(\d{2}/\d{2}/\d{4})\.\s*"
-        r"([0-9]{1,2}(?:\s+[0-9]{1,2}){5})"
-        r".{0,200}?\(Double\s*Play\).*?\s*"
-        r"([0-9]{1,2}(?:\s+[0-9]{1,2}){5})",
+        r"(?P<date>\d{2}/\d{2}/\d{4})\s*\.?\s*"
+        r"(?P<main>\d{1,2}(?:[,\s]+\d{1,2}){5})"
+        r".{0,500}?"
+        r"(?:Double\s*Play(?:®)?|\(Double\s*Play\))"
+        r".{0,200}?"
+        r"(?P<dp>\d{1,2}(?:[,\s]+\d{1,2}){5})",
         re.IGNORECASE | re.DOTALL
     )
 
     matches = list(pattern.finditer(html))
 
+    # Write CSV
     with PICK6_FILE.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
 
         count = 0
-        for m in matches:
-            d = m.group(1).strip()
-            main_nums = " ".join(m.group(2).split())
-            dp_nums = " ".join(m.group(3).split())
+        seen = set()
 
-            # sanity: exactly 6 nums each
-            if len(main_nums.split()) != 6 or len(dp_nums.split()) != 6:
+        for m in matches:
+            raw_date = m.group("date").strip()
+            main_nums = re.findall(r"\d+", m.group("main"))
+            dp_nums = re.findall(r"\d+", m.group("dp"))
+
+            if len(main_nums) != 6 or len(dp_nums) != 6:
                 continue
 
-            w.writerow([d, main_nums, dp_nums])
+            # Convert date to ISO for consistency with other files
+            draw_date = to_iso(raw_date)
+
+            # Join normalized numbers (space-separated)
+            main_str = " ".join(main_nums)
+            dp_str = " ".join(dp_nums)
+
+            key = (draw_date, main_str, dp_str)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            w.writerow([draw_date, main_str, dp_str])
             count += 1
 
-    if matches and count == 0:
-        print("⚠️ Pick-6 page parsed but 0 rows passed validation (regex matched, but format unexpected).")
+    if count == 0:
+        # Debug: save raw page content so we can adjust parser when site changes
+        raw_path = OUT_DIR / "pick6_raw.html"
+        raw_path.write_text(html, encoding="utf-8", errors="replace")
+        print("⚠️ Pick-6 parse returned 0 rows.")
+        print("✅ Debug saved:", raw_path)
+        print("✅ Tip: Open that file to update regex/parser if the site layout changed.")
+
     print(f"✅ Pick-6 rows written: {count}")
-
-
-def main():
-    print("Fetching Powerball...")
-    save_powerball(download(POWERBALL_URL))
-    print("Saved:", PB_FILE)
-
-    print("\nFetching Mega Millions...")
-    save_mega(download(MEGA_URL))
-    print("Saved:", MEGA_FILE)
-
-    print("\nFetching Pick-6 (NJ)...")
-    save_pick6(download(PICK6_URL))
-    print("Saved:", PICK6_FILE)
-
-
-if __name__ == "__main__":
-    main()
