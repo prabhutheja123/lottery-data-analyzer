@@ -30,7 +30,7 @@ def download(url: str) -> str:
             url,
             headers={
                 "User-Agent": "Mozilla/5.0",
-                "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+                "Accept": "text/csv,text/plain,text/html,application/json;q=0.9,*/*;q=0.8",
                 "Accept-Language": "en-US,en;q=0.9",
                 "Connection": "close",
             },
@@ -49,8 +49,31 @@ def download(url: str) -> str:
         return ""
 
 
+def looks_like_csv(text: str, required_cols: list[str]) -> bool:
+    if not text:
+        return False
+    head = text[:4000].lower()
+    if "<html" in head or "<!doctype html" in head:
+        return False
+    return all(col.lower() in head for col in required_cols)
+
+
 def save_powerball(text: str) -> int:
+    # Validate response looks like the expected CSV
+    if not looks_like_csv(text, ["Draw Date", "Winning Numbers"]):
+        print("⚠️ Powerball response is not a valid CSV (blocked/redirected).")
+        with PB_FILE.open("w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["draw_date", "white_numbers", "powerball"])
+        return 0
+
     reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        print("⚠️ Powerball CSV has no headers.")
+        with PB_FILE.open("w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["draw_date", "white_numbers", "powerball"])
+        return 0
 
     with PB_FILE.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -74,8 +97,23 @@ def save_powerball(text: str) -> int:
 
 
 def save_mega(text: str) -> int:
+    # Validate response looks like the expected CSV
+    if not looks_like_csv(text, ["Draw Date", "Winning Numbers"]):
+        print("⚠️ Mega Millions response is not a valid CSV (blocked/redirected).")
+        with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["draw_date", "white_numbers", "mega_ball", "multiplier"])
+        return 0
+
     reader = csv.DictReader(io.StringIO(text))
     print("Mega CSV columns:", reader.fieldnames)
+
+    if not reader.fieldnames:
+        print("⚠️ Mega Millions CSV has no headers.")
+        with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["draw_date", "white_numbers", "mega_ball", "multiplier"])
+        return 0
 
     with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -223,11 +261,11 @@ def main():
 
     print("✅ Saved:", PICK6_FILE.resolve())
 
-    # Fail pipeline ONLY if NY datasets fail (Pick6 can be blocked)
+    # Do NOT fail the pipeline here; analysis scripts will decide whether to skip.
     if pb_count == 0:
-        raise RuntimeError("Powerball fetch wrote 0 rows (dataset schema may have changed).")
+        print("⚠️ Powerball wrote 0 rows (blocked/unavailable).")
     if mega_count == 0:
-        raise RuntimeError("Mega Millions fetch wrote 0 rows (dataset schema may have changed).")
+        print("⚠️ Mega Millions wrote 0 rows (blocked/unavailable).")
 
     print("=== DONE ===")
     print("Counts:")
