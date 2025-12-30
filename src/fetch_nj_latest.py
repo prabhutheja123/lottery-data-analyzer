@@ -6,7 +6,7 @@ from pathlib import Path
 
 # NY Open Data CSV endpoints (Powerball + Mega Millions)
 POWERBALL_URL = "https://data.ny.gov/api/views/d6yy-54nr/rows.csv?accessType=DOWNLOAD"
-MEGA_URL      = "https://data.ny.gov/api/views/5xaw-6ayf/rows.csv?accessType=DOWNLOAD"
+MEGA_URL = "https://data.ny.gov/api/views/5xaw-6ayf/rows.csv?accessType=DOWNLOAD"
 
 # NJ Lottery official page (Pick-6 page includes recent results + Double Play in HTML)
 PICK6_URL = "https://www.njlottery.com/en-us/drawgames/pick6lotto.html"
@@ -14,8 +14,8 @@ PICK6_URL = "https://www.njlottery.com/en-us/drawgames/pick6lotto.html"
 OUT_DIR = Path("data/nj")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-PB_FILE    = OUT_DIR / "powerball.csv"
-MEGA_FILE  = OUT_DIR / "mega_millions.csv"
+PB_FILE = OUT_DIR / "powerball.csv"
+MEGA_FILE = OUT_DIR / "mega_millions.csv"
 PICK6_FILE = OUT_DIR / "pick6.csv"
 
 
@@ -162,7 +162,6 @@ def save_pick6(html: str) -> int:
         print("✅ Pick-6 rows written: 0")
         return 0
 
-    # If 0 rows, save debug HTML (most likely the site changed / JS-rendered)
     if count == 0:
         raw_path = OUT_DIR / "pick6_raw.html"
         raw_path.write_text(html, encoding="utf-8", errors="replace")
@@ -177,11 +176,39 @@ def main():
     print("=== FETCH NJ LATEST ===")
     print("Output dir:", OUT_DIR.resolve())
 
-    # Powerball
     print("Downloading Powerball...")
     pb_text = download(POWERBALL_URL)
     pb_count = save_powerball(pb_text)
     print("✅ Saved:", PB_FILE.resolve())
+
+    print("Downloading Mega Millions...")
+    mega_text = download(MEGA_URL)
+    mega_count = save_mega(mega_text)
+    print("✅ Saved:", MEGA_FILE.resolve())
+
+    print("Downloading Pick-6 (NJ HTML)...")
+    pick6_html = download(PICK6_URL)
+    pick6_count = save_pick6(pick6_html)
+    print("✅ Saved:", PICK6_FILE.resolve())
+
+    if pb_count == 0:
+        raise RuntimeError("Powerball fetch wrote 0 rows (dataset schema may have changed).")
+    if mega_count == 0:
+        raise RuntimeError("Mega Millions fetch wrote 0 rows (dataset schema may have changed).")
+
+    print("=== DONE ===")
+    print("Counts:")
+    print(" - Powerball:", pb_count)
+    print(" - Mega Millions:", mega_count)
+    print(" - Pick-6:", pick6_count)
+
+    print("Files created in data/nj:")
+    for p in sorted(OUT_DIR.glob("*")):
+        print(" -", p.name, f"({p.stat().st_size} bytes)")
+
+
+if __name__ == "__main__":
+    main()
 
     # Mega Millions
     print("Downloading Mega Millions...")
