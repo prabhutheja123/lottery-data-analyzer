@@ -2,6 +2,7 @@ import re
 import csv
 import io
 import urllib.request
+from urllib.error import HTTPError, URLError
 from pathlib import Path
 
 # NY Open Data CSV endpoints (Powerball + Mega Millions)
@@ -20,9 +21,32 @@ PICK6_FILE = OUT_DIR / "pick6.csv"
 
 
 def download(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.read().decode("utf-8", errors="replace")
+    """
+    Download text from a URL. If blocked (e.g., 403) or network fails,
+    return empty string so pipeline can continue.
+    """
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Connection": "close",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.read().decode("utf-8", errors="replace")
+
+    except HTTPError as e:
+        print(f"⚠️ HTTP error {e.code} for URL: {url}")
+        return ""
+    except URLError as e:
+        print(f"⚠️ Network error for URL: {url} -> {e}")
+        return ""
+    except Exception as e:
+        print(f"⚠️ Unexpected error for URL: {url} -> {repr(e)}")
+        return ""
 
 
 def save_powerball(text: str) -> int:
@@ -67,6 +91,7 @@ def save_mega(text: str) -> int:
             if not draw_date or not winning or not mega_ball:
                 continue
 
+            # Winning Numbers in this dataset = ONLY 5 white balls
             white_nums = re.findall(r"\d+", winning)
             if len(white_nums) != 5:
                 continue
@@ -96,7 +121,7 @@ def save_pick6(html: str) -> int:
       - main_numbers (6 nums)
       - double_play_numbers (6 nums)
 
-    If parsing fails (0 rows), save raw HTML for debugging:
+    If parsing fails or returns 0 rows, save raw HTML for debugging:
       data/nj/pick6_raw.html
     """
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -119,8 +144,9 @@ def save_pick6(html: str) -> int:
     seen = set()
 
     try:
-        matches = list(pattern.finditer(html))
+        matches = list(pattern.finditer(html or ""))
 
+        # ALWAYS create the CSV file (even if no matches)
         with PICK6_FILE.open("w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
@@ -146,12 +172,13 @@ def save_pick6(html: str) -> int:
                 count += 1
 
     except Exception as e:
+        # Still ensure CSV exists with headers
         with PICK6_FILE.open("w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
 
         raw_path = OUT_DIR / "pick6_raw.html"
-        raw_path.write_text(html, encoding="utf-8", errors="replace")
+        raw_path.write_text(html or "", encoding="utf-8", errors="replace")
         print("⚠️ Pick-6 parsing crashed, but CSV header was created.")
         print("Error:", repr(e))
         print("✅ Debug saved:", raw_path)
@@ -160,8 +187,8 @@ def save_pick6(html: str) -> int:
 
     if count == 0:
         raw_path = OUT_DIR / "pick6_raw.html"
-        raw_path.write_text(html, encoding="utf-8", errors="replace")
-        print("⚠️ Pick-6 parse returned 0 rows (site may be JS-rendered).")
+        raw_path.write_text(html or "", encoding="utf-8", errors="replace")
+        print("⚠️ Pick-6 parse returned 0 rows (blocked/JS-rendered likely).")
         print("✅ Debug saved:", raw_path)
 
     print(f"✅ Pick-6 rows written: {count}")
@@ -172,21 +199,31 @@ def main():
     print("=== FETCH NJ LATEST ===")
     print("Output dir:", OUT_DIR.resolve())
 
+    # Powerball
     print("Downloading Powerball...")
     pb_text = download(POWERBALL_URL)
     pb_count = save_powerball(pb_text)
     print("✅ Saved:", PB_FILE.resolve())
 
+    # Mega Millions
     print("Downloading Mega Millions...")
     mega_text = download(MEGA_URL)
     mega_count = save_mega(mega_text)
     print("✅ Saved:", MEGA_FILE.resolve())
 
+    # Pick 6 (may be blocked in GitHub Actions)
     print("Downloading Pick-6 (NJ HTML)...")
     pick6_html = download(PICK6_URL)
-    pick6_count = save_pick6(pick6_html)
+
+    if not pick6_html:
+        print("⚠️ Pick-6 download failed/blocked (likely 403). Creating CSV with headers only.")
+        pick6_count = save_pick6("")  # creates CSV headers
+    else:
+        pick6_count = save_pick6(pick6_html)
+
     print("✅ Saved:", PICK6_FILE.resolve())
 
+    # Fail pipeline ONLY if NY datasets fail (Pick6 can be blocked)
     if pb_count == 0:
         raise RuntimeError("Powerball fetch wrote 0 rows (dataset schema may have changed).")
     if mega_count == 0:
