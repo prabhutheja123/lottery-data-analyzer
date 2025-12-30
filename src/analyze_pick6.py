@@ -31,9 +31,9 @@ def print_freq_table(title: str, counter: Counter, lo: int, hi: int) -> None:
         print(f"{n:2d} -> {counter.get(n, 0)} times")
 
 
-def main() -> None:
+def main(top_n: int = 10) -> None:
     print("\n===== PICK 6 (NJ) =====")
-    print("Looking for:", PICK6_CSV)
+    print("Looking for:", str(PICK6_CSV))
     print("Exists?:", PICK6_CSV.exists())
 
     if not PICK6_CSV.exists():
@@ -42,12 +42,12 @@ def main() -> None:
 
     rows = read_csv(str(PICK6_CSV))
     if not rows:
+        print("⚠️ Warning: CSV exists but has no data rows ->", str(PICK6_CSV))
         print("⚠️ pick6.csv exists but has 0 rows (likely blocked in CI).")
         print("⚠️ Skipping Pick 6 analysis gracefully.")
         return
 
-    # Parse and validate
-    draws: list[tuple[str, list[int], list[int]]] = []
+    draws = []
     bad = 0
 
     for r in rows:
@@ -67,7 +67,7 @@ def main() -> None:
                 bad += 1
                 continue
 
-            # Pick-6 range expected 1–46 (adjust if your dataset differs)
+            # Pick-6 expected range: 1–46 (adjust if needed)
             if not in_range(main_nums, 1, 46) or not in_range(dp_nums, 1, 46):
                 bad += 1
                 continue
@@ -76,26 +76,21 @@ def main() -> None:
         except Exception:
             bad += 1
 
-    print("Total rows read:", len(rows))
-    print("Valid draws parsed:", len(draws))
-    print("Bad/Skipped rows:", bad)
-
     if not draws:
         print("⚠️ No valid Pick-6 draws parsed. Skipping analysis.")
         return
 
-    # Sort newest first
     draws.sort(key=lambda x: parse_date(x[0]), reverse=True)
 
-    # ---- Latest 10 draws (like Mega output) ----
-    print("\nLATEST 10 DRAWS")
+    # Mega-style latest section
+    print("\nLATEST DRAWS")
     print("-" * 60)
-    for d, main_nums, dp_nums in draws[:10]:
-        main_fmt = " ".join(f"{n:02d}" for n in main_nums)
-        dp_fmt = " ".join(f"{n:02d}" for n in dp_nums)
+    for d, main_nums, dp_nums in draws[:top_n]:
+        main_fmt = " ".join(map(str, main_nums))
+        dp_fmt = " ".join(map(str, dp_nums))
         print(f"{d} | Main: {main_fmt} | DP: {dp_fmt}")
 
-    # ---- Frequency tables (like Mega output) ----
+    # Frequency
     main_all = []
     dp_all = []
     for _, main_nums, dp_nums in draws:
@@ -108,7 +103,6 @@ def main() -> None:
     print_freq_table("MAIN BALL FREQUENCY", mc, 1, 46)
     print_freq_table("DOUBLE PLAY FREQUENCY", dc, 1, 46)
 
-    # Save CSV reports (optional but useful)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     write_frequency_csv(REPORTS_DIR / "pick6_main_frequency.csv", mc, 1, 46)
     write_frequency_csv(REPORTS_DIR / "pick6_double_play_frequency.csv", dc, 1, 46)
