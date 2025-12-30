@@ -1,4 +1,3 @@
-import os
 import re
 from collections import Counter
 from pathlib import Path
@@ -27,19 +26,18 @@ def write_frequency_csv(path: Path, counter: Counter, lo: int, hi: int) -> None:
 
 def main(top_n: int = 15) -> None:
     print("\n===== PICK 6 (NJ) =====")
-    print("Looking for:", str(PICK6_CSV))
+    print("Looking for:", PICK6_CSV)
     print("Exists?:", PICK6_CSV.exists())
 
     if not PICK6_CSV.exists():
-        print("❌ ERROR: pick6.csv not found.")
-        print("✅ Fix: Ensure src/fetch_nj_latest.py runs and saves to data/nj/pick6.csv")
+        print("⚠️ pick6.csv not found. Skipping Pick 6 analysis.")
         return
 
     rows = read_csv(str(PICK6_CSV))
-if not rows:
-    print("⚠️ Warning: pick6.csv exists but has 0 rows (likely blocked in CI).")
-    print("⚠️ Skipping Pick 6 analysis gracefully.")
-    return
+    if not rows:
+        print("⚠️ pick6.csv exists but has 0 rows (likely blocked in CI).")
+        print("⚠️ Skipping Pick 6 analysis gracefully.")
+        return
 
     draws = []
     bad = 0
@@ -61,7 +59,6 @@ if not rows:
                 bad += 1
                 continue
 
-            # NJ Pick-6: 1–46 (your expected range)
             if not in_range(main_nums, 1, 46) or not in_range(dp_nums, 1, 46):
                 bad += 1
                 continue
@@ -75,7 +72,7 @@ if not rows:
     print("Bad/Skipped rows:", bad)
 
     if not draws:
-        print("❌ ERROR: No valid Pick-6 draws parsed. Check fetch parsing.")
+        print("⚠️ No valid Pick-6 draws parsed. Skipping analysis.")
         return
 
     draws.sort(key=lambda x: parse_date(x[0]), reverse=True)
