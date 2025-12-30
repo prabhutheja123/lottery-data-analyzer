@@ -19,6 +19,9 @@ jobs:
           python-version: "3.11"
 
       - name: Fetch NJ lottery data
+        timeout-minutes: 5
+        env:
+          PYTHONUNBUFFERED: "1"
         run: |
           python src/fetch_nj_latest.py
 
@@ -43,11 +46,12 @@ jobs:
         run: |
           python src/analyze_pick6.py
 
-      - name: Upload outputs (reports + debug HTML)
+      - name: Upload outputs (reports + data + debug HTML)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lottery-outputs
           path: |
             reports
+            data/nj/*.csv
             data/nj/pick6_raw.html
