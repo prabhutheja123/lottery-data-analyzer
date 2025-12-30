@@ -36,9 +36,10 @@ def main(top_n: int = 15) -> None:
         return
 
     rows = read_csv(str(PICK6_CSV))
-    if not rows:
-        print("❌ ERROR: pick6.csv exists but has 0 rows.")
-        return
+if not rows:
+    print("⚠️ Warning: pick6.csv exists but has 0 rows (likely blocked in CI).")
+    print("⚠️ Skipping Pick 6 analysis gracefully.")
+    return
 
     draws = []
     bad = 0
