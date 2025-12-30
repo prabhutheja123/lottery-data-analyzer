@@ -5,6 +5,7 @@ import urllib.request
 from urllib.error import HTTPError, URLError
 from pathlib import Path
 
+# ================== URLs ==================
 # NY Open Data CSV endpoints (Powerball + Mega Millions)
 POWERBALL_URL = "https://data.ny.gov/api/views/d6yy-54nr/rows.csv?accessType=DOWNLOAD"
 MEGA_URL = "https://data.ny.gov/api/views/5xaw-6ayf/rows.csv?accessType=DOWNLOAD"
@@ -12,14 +13,17 @@ MEGA_URL = "https://data.ny.gov/api/views/5xaw-6ayf/rows.csv?accessType=DOWNLOAD
 # NJ Lottery official page (Pick-6 page includes recent results + Double Play in HTML)
 PICK6_URL = "https://www.njlottery.com/en-us/drawgames/pick6lotto.html"
 
+# ================== PATHS ==================
 OUT_DIR = Path("data/nj")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 PB_FILE = OUT_DIR / "powerball.csv"
 MEGA_FILE = OUT_DIR / "mega_millions.csv"
 PICK6_FILE = OUT_DIR / "pick6.csv"
+PICK6_RAW = OUT_DIR / "pick6_raw.html"
 
 
+# ================== NETWORK ==================
 def download(url: str) -> str:
     """
     Download text from a URL. If blocked (e.g., 403) or network fails,
@@ -58,6 +62,7 @@ def looks_like_csv(text: str, required_cols: list[str]) -> bool:
     return all(col.lower() in head for col in required_cols)
 
 
+# ================== SAVE POWERBALL ==================
 def save_powerball(text: str) -> int:
     # Validate response looks like the expected CSV
     if not looks_like_csv(text, ["Draw Date", "Winning Numbers"]):
@@ -96,6 +101,7 @@ def save_powerball(text: str) -> int:
     return count
 
 
+# ================== SAVE MEGA MILLIONS ==================
 def save_mega(text: str) -> int:
     # Validate response looks like the expected CSV
     if not looks_like_csv(text, ["Draw Date", "Winning Numbers"]):
@@ -150,199 +156,7 @@ def save_mega(text: str) -> int:
     return count
 
 
-def save_pick6(html: str) -> int:
-    """
-    Parse Pick-6 + Double Play from the NJ Lottery HTML page.
-
-    Output columns:
-      - draw_date (YYYY-MM-DD)
-      - main_numbers (6 nums)
-      - double_play_numbers (6 nums)
-
-    If parsing fails or returns 0 rows, save raw HTML for debugging:
-      data/nj/pick6_raw.html
-    """
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    def to_iso(mmddyyyy: str) -> str:
-        mm, dd, yyyy = mmddyyyy.split("/")
-        return f"{yyyy}-{mm}-{dd}"
-
-    pattern = re.compile(
-        r"(?P<date>\d{2}/\d{2}/\d{4})\s*\.?\s*"
-        r"(?P<main>\d{1,2}(?:[,\s]+\d{1,2}){5})"
-        r".{0,500}?"
-        r"(?:Double\s*Play(?:®)?|\(Double\s*Play\))"
-        r".{0,200}?"
-        r"(?P<dp>\d{1,2}(?:[,\s]+\d{1,2}){5})",
-        re.IGNORECASE | re.DOTALL
-    )
-
-    count = 0
-    seen = set()
-
-    try:
-        matches = list(pattern.finditer(html or ""))
-
-        # ALWAYS create the CSV file (even if no matches)
-        with PICK6_FILE.open("w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
-
-            for m in matches:
-                raw_date = (m.group("date") or "").strip()
-                main_nums = re.findall(r"\d+", m.group("main") or "")
-                dp_nums = re.findall(r"\d+", m.group("dp") or "")
-import re
-import csv
-import io
-import urllib.request
-from urllib.error import HTTPError, URLError
-from pathlib import Path
-
-# NY Open Data CSV endpoints (Powerball + Mega Millions)
-POWERBALL_URL = "https://data.ny.gov/api/views/d6yy-54nr/rows.csv?accessType=DOWNLOAD"
-MEGA_URL = "https://data.ny.gov/api/views/5xaw-6ayf/rows.csv?accessType=DOWNLOAD"
-
-# NJ Lottery official page (Pick-6 page includes recent results + Double Play in HTML)
-PICK6_URL = "https://www.njlottery.com/en-us/drawgames/pick6lotto.html"
-
-OUT_DIR = Path("data/nj")
-OUT_DIR.mkdir(parents=True, exist_ok=True)
-
-PB_FILE = OUT_DIR / "powerball.csv"
-MEGA_FILE = OUT_DIR / "mega_millions.csv"
-PICK6_FILE = OUT_DIR / "pick6.csv"
-PICK6_RAW = OUT_DIR / "pick6_raw.html"
-
-
-def download(url: str) -> str:
-    """
-    Download text from a URL. If blocked (e.g., 403) or network fails,
-    return empty string so pipeline can continue.
-    """
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0",
-                "Accept": "text/csv,text/plain,text/html,application/json;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Connection": "close",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=60) as r:
-            return r.read().decode("utf-8", errors="replace")
-
-    except HTTPError as e:
-        print(f"⚠️ HTTP error {e.code} for URL: {url}")
-        return ""
-    except URLError as e:
-        print(f"⚠️ Network error for URL: {url} -> {e}")
-        return ""
-    except Exception as e:
-        print(f"⚠️ Unexpected error for URL: {url} -> {repr(e)}")
-        return ""
-
-
-def looks_like_csv(text: str, required_cols: list[str]) -> bool:
-    if not text:
-        return False
-    head = text[:4000].lower()
-    if "<html" in head or "<!doctype html" in head:
-        return False
-    return all(col.lower() in head for col in required_cols)
-
-
-def save_powerball(text: str) -> int:
-    if not looks_like_csv(text, ["Draw Date", "Winning Numbers"]):
-        print("⚠️ Powerball response is not a valid CSV (blocked/redirected).")
-        with PB_FILE.open("w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["draw_date", "white_numbers", "powerball"])
-        return 0
-
-    reader = csv.DictReader(io.StringIO(text))
-    if not reader.fieldnames:
-        print("⚠️ Powerball CSV has no headers.")
-        with PB_FILE.open("w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["draw_date", "white_numbers", "powerball"])
-        return 0
-
-    with PB_FILE.open("w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(["draw_date", "white_numbers", "powerball"])
-
-        count = 0
-        for r in reader:
-            nums = (r.get("Winning Numbers") or "").split()
-            if len(nums) != 6:
-                continue
-
-            draw_date = (r.get("Draw Date") or "").split("T")[0]
-            if not draw_date:
-                continue
-
-            w.writerow([draw_date, " ".join(nums[:5]), nums[5]])
-            count += 1
-
-    print(f"✅ Powerball rows written: {count}")
-    return count
-
-
-def save_mega(text: str) -> int:
-    if not looks_like_csv(text, ["Draw Date", "Winning Numbers"]):
-        print("⚠️ Mega Millions response is not a valid CSV (blocked/redirected).")
-        with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["draw_date", "white_numbers", "mega_ball", "multiplier"])
-        return 0
-
-    reader = csv.DictReader(io.StringIO(text))
-    print("Mega CSV columns:", reader.fieldnames)
-
-    if not reader.fieldnames:
-        print("⚠️ Mega Millions CSV has no headers.")
-        with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["draw_date", "white_numbers", "mega_ball", "multiplier"])
-        return 0
-
-    with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(["draw_date", "white_numbers", "mega_ball", "multiplier"])
-
-        count = 0
-        for r in reader:
-            draw_date = (r.get("Draw Date") or "").strip()
-            winning = (r.get("Winning Numbers") or "").strip()
-            mega_ball = (r.get("Mega Ball") or "").strip()
-            multiplier = (r.get("Multiplier") or "").strip() or "N/A"
-
-            if not draw_date or not winning or not mega_ball:
-                continue
-
-            white_nums = re.findall(r"\d+", winning)
-            if len(white_nums) != 5:
-                continue
-
-            mb = re.findall(r"\d+", mega_ball)
-            if not mb:
-                continue
-
-            w.writerow([
-                draw_date.split("T")[0],
-                " ".join(white_nums),
-                mb[0],
-                multiplier
-            ])
-            count += 1
-
-    print(f"✅ Mega Millions rows written: {count}")
-    return count
-
-
+# ================== SAVE PICK 6 ==================
 def save_pick6(html: str) -> int:
     """
     Parse Pick-6 + Double Play from the NJ Lottery HTML page.
@@ -402,7 +216,6 @@ def save_pick6(html: str) -> int:
                 count += 1
 
     except Exception as e:
-        # Keep existing cached file if present (don't overwrite with empty)
         PICK6_RAW.write_text(html or "", encoding="utf-8", errors="replace")
         print("⚠️ Pick-6 parsing crashed.")
         print("Error:", repr(e))
@@ -429,6 +242,7 @@ def pick6_cached_has_data(min_bytes: int = 80) -> bool:
         return False
 
 
+# ================== MAIN ==================
 def main():
     print("=== FETCH NJ LATEST ===")
     print("Output dir:", OUT_DIR.resolve())
@@ -461,14 +275,12 @@ def main():
                 w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
             pick6_count = 0
     else:
-        # If HTML downloaded, attempt parse; if parse finds 0 rows, keep cached file if it exists
-        before_ok = pick6_cached_has_data()
+        # If HTML downloaded, attempt parse
         pick6_count = save_pick6(pick6_html)
-        if pick6_count == 0 and before_ok and pick6_cached_has_data():
-            print("⚠️ Pick-6 parse returned 0, but cached pick6.csv already exists. Keeping cached file.")
-        elif pick6_count == 0 and before_ok:
-            # If we overwrote it with empty, restore isn't possible here; warn loudly
-            print("⚠️ Pick-6 parse returned 0 and cached file may have been overwritten earlier. Consider committing a cached pick6.csv.")
+
+        # If we got 0 rows but a cached file exists (from previous commits), keep it
+        if pick6_count == 0 and pick6_cached_has_data():
+            print("⚠️ Pick-6 parse returned 0 but cached pick6.csv exists. Keeping cached file.")
 
     print("✅ Pick-6 file:", PICK6_FILE.resolve())
 
