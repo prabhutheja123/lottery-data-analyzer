@@ -67,7 +67,6 @@ def save_mega(text: str) -> int:
             if not draw_date or not winning or not mega_ball:
                 continue
 
-            # Winning Numbers in this dataset = ONLY 5 white balls
             white_nums = re.findall(r"\d+", winning)
             if len(white_nums) != 5:
                 continue
@@ -122,7 +121,6 @@ def save_pick6(html: str) -> int:
     try:
         matches = list(pattern.finditer(html))
 
-        # ALWAYS create the CSV file (even if no matches)
         with PICK6_FILE.open("w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
@@ -148,8 +146,6 @@ def save_pick6(html: str) -> int:
                 count += 1
 
     except Exception as e:
-        # Never break the pipeline because Pick6 parsing failed
-        # Still ensure CSV exists with headers
         with PICK6_FILE.open("w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
@@ -209,94 +205,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    # Mega Millions
-    print("Downloading Mega Millions...")
-    mega_text = download(MEGA_URL)
-    mega_count = save_mega(mega_text)
-    print("✅ Saved:", MEGA_FILE.resolve())
-
-    # Pick 6
-    print("Downloading Pick-6 (NJ HTML)...")
-    pick6_html = download(PICK6_URL)
-    pick6_count = save_pick6(pick6_html)
-    print("✅ Saved:", PICK6_FILE.resolve())
-
-    # Optional: make fetch failures obvious in CI for PB/Mega
-    # (Pick6 can legitimately be 0 if the page is JS-rendered)
-    if pb_count == 0:
-        raise RuntimeError("Powerball fetch wrote 0 rows (dataset schema may have changed).")
-    if mega_count == 0:
-        raise RuntimeError("Mega Millions fetch wrote 0 rows (dataset schema may have changed).")
-
-    print("=== DONE ===")
-    print("Counts:")
-    print(" - Powerball:", pb_count)
-    print(" - Mega Millions:", mega_count)
-    print(" - Pick-6:", pick6_count)
-
-    print("Files created in data/nj:")
-    for p in sorted(OUT_DIR.glob("*")):
-        print(" -", p.name, f"({p.stat().st_size} bytes)")
-
-
-if __name__ == "__main__":
-    main()        r".{0,200}?"
-        r"(?P<dp>\d{1,2}(?:[,\s]+\d{1,2}){5})",
-        re.IGNORECASE | re.DOTALL
-    )
-
-    count = 0
-    seen = set()
-
-    try:
-        matches = list(pattern.finditer(html))
-
-        # ✅ ALWAYS create the CSV file (even if no matches)
-        with PICK6_FILE.open("w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
-
-            for m in matches:
-                raw_date = (m.group("date") or "").strip()
-                main_nums = re.findall(r"\d+", m.group("main") or "")
-                dp_nums = re.findall(r"\d+", m.group("dp") or "")
-
-                if len(main_nums) != 6 or len(dp_nums) != 6:
-                    continue
-
-                draw_date = to_iso(raw_date)
-                main_str = " ".join(main_nums)
-                dp_str = " ".join(dp_nums)
-
-                key = (draw_date, main_str, dp_str)
-                if key in seen:
-                    continue
-                seen.add(key)
-
-                w.writerow([draw_date, main_str, dp_str])
-                count += 1
-
-    except Exception as e:
-        # ✅ Never break the pipeline because Pick6 parsing failed
-        # Still ensure CSV exists with headers
-        with PICK6_FILE.open("w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
-
-        raw_path = OUT_DIR / "pick6_raw.html"
-        raw_path.write_text(html, encoding="utf-8", errors="replace")
-        print("⚠️ Pick-6 parsing crashed, but CSV header was created.")
-        print("Error:", repr(e))
-        print("✅ Debug saved:", raw_path)
-        print(f"✅ Pick-6 rows written: 0")
-        return
-
-    # If 0 rows, save debug HTML (most likely the site changed / JS-rendered)
-    if count == 0:
-        raw_path = OUT_DIR / "pick6_raw.html"
-        raw_path.write_text(html, encoding="utf-8", errors="replace")
-        print("⚠️ Pick-6 parse returned 0 rows (site may be JS-rendered).")
-        print("✅ Debug saved:", raw_path)
-
-    print(f"✅ Pick-6 rows written: {count}")
