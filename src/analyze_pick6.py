@@ -24,7 +24,14 @@ def write_frequency_csv(path: Path, counter: Counter, lo: int, hi: int) -> None:
             f.write(f"{n},{counter.get(n, 0)}\n")
 
 
-def main(top_n: int = 15) -> None:
+def print_freq_table(title: str, counter: Counter, lo: int, hi: int) -> None:
+    print(f"\n{title} ({lo}–{hi})")
+    print("-" * 60)
+    for n in range(lo, hi + 1):
+        print(f"{n:2d} -> {counter.get(n, 0)} times")
+
+
+def main() -> None:
     print("\n===== PICK 6 (NJ) =====")
     print("Looking for:", PICK6_CSV)
     print("Exists?:", PICK6_CSV.exists())
@@ -39,7 +46,8 @@ def main(top_n: int = 15) -> None:
         print("⚠️ Skipping Pick 6 analysis gracefully.")
         return
 
-    draws = []
+    # Parse and validate
+    draws: list[tuple[str, list[int], list[int]]] = []
     bad = 0
 
     for r in rows:
@@ -59,6 +67,7 @@ def main(top_n: int = 15) -> None:
                 bad += 1
                 continue
 
+            # Pick-6 range expected 1–46 (adjust if your dataset differs)
             if not in_range(main_nums, 1, 46) or not in_range(dp_nums, 1, 46):
                 bad += 1
                 continue
@@ -75,13 +84,18 @@ def main(top_n: int = 15) -> None:
         print("⚠️ No valid Pick-6 draws parsed. Skipping analysis.")
         return
 
+    # Sort newest first
     draws.sort(key=lambda x: parse_date(x[0]), reverse=True)
 
-    print("\nLatest 10 draws")
+    # ---- Latest 10 draws (like Mega output) ----
+    print("\nLATEST 10 DRAWS")
     print("-" * 60)
     for d, main_nums, dp_nums in draws[:10]:
-        print(f"{d} | Main: {' '.join(map(str, main_nums))} | DP: {' '.join(map(str, dp_nums))}")
+        main_fmt = " ".join(f"{n:02d}" for n in main_nums)
+        dp_fmt = " ".join(f"{n:02d}" for n in dp_nums)
+        print(f"{d} | Main: {main_fmt} | DP: {dp_fmt}")
 
+    # ---- Frequency tables (like Mega output) ----
     main_all = []
     dp_all = []
     for _, main_nums, dp_nums in draws:
@@ -91,16 +105,10 @@ def main(top_n: int = 15) -> None:
     mc = Counter(main_all)
     dc = Counter(dp_all)
 
-    print("\nTOP MAIN NUMBERS")
-    print("-" * 40)
-    for n, c in mc.most_common(top_n):
-        print(f"{n:2d} -> {c} times")
+    print_freq_table("MAIN BALL FREQUENCY", mc, 1, 46)
+    print_freq_table("DOUBLE PLAY FREQUENCY", dc, 1, 46)
 
-    print("\nTOP DOUBLE PLAY NUMBERS")
-    print("-" * 40)
-    for n, c in dc.most_common(top_n):
-        print(f"{n:2d} -> {c} times")
-
+    # Save CSV reports (optional but useful)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     write_frequency_csv(REPORTS_DIR / "pick6_main_frequency.csv", mc, 1, 46)
     write_frequency_csv(REPORTS_DIR / "pick6_double_play_frequency.csv", dc, 1, 46)
