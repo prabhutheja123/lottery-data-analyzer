@@ -34,14 +34,10 @@ jobs:
         run: |
           python src/fetch_nj_latest.py
 
-      - name: Debug folders after fetch
+      - name: Debug folders after fetch (optional)
         run: |
           echo "== LIST data directory =="
           ls -R data || true
-          echo "== LIST reports directory =="
-          ls -R reports || true
-          echo "== Current directory =="
-          pwd
 
       - name: Analyze Powerball
         run: |
@@ -54,13 +50,3 @@ jobs:
       - name: Analyze Pick 6
         run: |
           python src/analyze_pick6.py
-
-      - name: Upload outputs (reports + data + debug HTML)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: lottery-outputs
-          path: |
-            reports
-            data/nj/*.csv
-            data/nj/pick6_raw.html
