@@ -50,3 +50,6 @@ jobs:
       - name: Analyze Pick 6
         run: |
           python src/analyze_pick6.py
+      - name: Analyze Jersey Cash 5
+        run: |
+          python src/analyze_jersey_cash5.py
