@@ -23,13 +23,6 @@ def normalize_multiplier(m: str) -> str:
 
 
 def read_mega_draws(csv_file: str):
-    """
-    Reads Mega Millions CSV with columns:
-      - draw_date
-      - white_numbers (5 ints space-separated)
-      - mega_ball
-      - multiplier
-    """
     draws = []
     with open(csv_file, newline="", encoding="utf-8") as f:
         r = csv.DictReader(f)
@@ -122,7 +115,6 @@ def main():
     # Thresholds (tunable)
     HOT_MIN_WHITE = 210
     MED_MIN_WHITE = 180
-
     HOT_MIN_MB = 70
     MED_MIN_MB = 55
 
@@ -177,6 +169,17 @@ def main():
     print("-" * 80)
     for k, c in mult_full.most_common(5):
         print(f"{k} -> {c} times")
+
+    # ✅ FULL TABLES YOU ASKED FOR
+    print("\nWHITE BALL FREQUENCY (1–70) [FULL]")
+    print("-" * 80)
+    for i in range(1, 71):
+        print(f"{i:2d} -> {white_full.get(i, 0)} times")
+
+    print("\nMEGA BALL FREQUENCY (1–25) [FULL]")
+    print("-" * 80)
+    for i in range(1, 26):
+        print(f"{i:2d} -> {mb_full.get(i, 0)} times")
 
 
 if __name__ == "__main__":
