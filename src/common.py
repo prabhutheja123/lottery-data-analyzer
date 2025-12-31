@@ -3,17 +3,41 @@ import os
 from datetime import datetime
 
 
-def parse_date(d: str) -> datetime:
+def parse_date(d: str, strict: bool = False) -> datetime:
     """
-    Parse date in either YYYY-MM-DD or MM/DD/YYYY format.
+    Parse date safely.
+
+    Supported formats:
+      - YYYY-MM-DD
+      - MM/DD/YYYY
+      - YYYY-MM-DDTHH:MM:SS
+
+    If strict=False (default):
+      - returns None on failure instead of crashing
     """
     if not d:
-        raise ValueError("Empty date value")
+        if strict:
+            raise ValueError("Empty date value")
+        return None
 
-    try:
-        return datetime.strptime(d, "%Y-%m-%d")
-    except ValueError:
-        return datetime.strptime(d, "%m/%d/%Y")
+    d = d.strip()
+
+    formats = [
+        "%Y-%m-%d",
+        "%m/%d/%Y",
+        "%Y-%m-%dT%H:%M:%S",
+    ]
+
+    for fmt in formats:
+        try:
+            return datetime.strptime(d, fmt)
+        except ValueError:
+            continue
+
+    if strict:
+        raise ValueError(f"Unrecognized date format: {d}")
+
+    return None
 
 
 def read_csv(path: str):
