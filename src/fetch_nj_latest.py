@@ -62,6 +62,22 @@ def looks_like_csv(text: str, required_cols: list[str]) -> bool:
     return all(col.lower() in head for col in required_cols)
 
 
+def normalize_multiplier(m: str) -> str:
+    """
+    Normalize multiplier values to:
+      - "2X", "3X", ... or "N/A"
+    """
+    if not m:
+        return "N/A"
+    m = m.strip().upper()
+    if m in ("NA", "N/A", "NONE"):
+        return "N/A"
+    digits = re.findall(r"\d+", m)
+    if not digits:
+        return "N/A"
+    return f"{digits[0]}X"
+
+
 # ================== SAVE POWERBALL ==================
 def save_powerball(text: str) -> int:
     # Validate response looks like the expected CSV
@@ -112,7 +128,6 @@ def save_mega(text: str) -> int:
         return 0
 
     reader = csv.DictReader(io.StringIO(text))
-    print("Mega CSV columns:", reader.fieldnames)
 
     if not reader.fieldnames:
         print("⚠️ Mega Millions CSV has no headers.")
@@ -130,7 +145,7 @@ def save_mega(text: str) -> int:
             draw_date = (r.get("Draw Date") or "").strip()
             winning = (r.get("Winning Numbers") or "").strip()
             mega_ball = (r.get("Mega Ball") or "").strip()
-            multiplier = (r.get("Multiplier") or "").strip() or "N/A"
+            multiplier_raw = (r.get("Multiplier") or "").strip()
 
             if not draw_date or not winning or not mega_ball:
                 continue
@@ -144,12 +159,16 @@ def save_mega(text: str) -> int:
             if not mb:
                 continue
 
-            w.writerow([
-                draw_date.split("T")[0],
-                " ".join(white_nums),
-                mb[0],
-                multiplier
-            ])
+            multiplier = normalize_multiplier(multiplier_raw)
+
+            w.writerow(
+                [
+                    draw_date.split("T")[0],
+                    " ".join(white_nums),
+                    mb[0],
+                    multiplier,
+                ]
+            )
             count += 1
 
     print(f"✅ Mega Millions rows written: {count}")
@@ -182,7 +201,7 @@ def save_pick6(html: str) -> int:
         r"(?:Double\s*Play(?:®)?|\(Double\s*Play\))"
         r".{0,200}?"
         r"(?P<dp>\d{1,2}(?:[,\s]+\d{1,2}){5})",
-        re.IGNORECASE | re.DOTALL
+        re.IGNORECASE | re.DOTALL,
     )
 
     count = 0
