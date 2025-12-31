@@ -195,149 +195,185 @@ def main():
                 "frequency_full_history": f_all,
                 "bucket": bucket,
             }
-        )
+import os
+import sys
+import csv
+import re
+from collections import Counter
 
-    latest_mb_freq = mega_freq_all.get(latest_mb, 0)
-    latest_mb_bucket = classify_bucket(latest_mb_freq, HOT_MIN_MB, MED_MIN_MB)
+sys.path.append("src")
+from common import parse_date  # noqa: E402
 
-    mix_label = f"{mix.get('HOT',0)}_HOT__{mix.get('MEDIUM',0)}_MEDIUM__{mix.get('COLD',0)}_COLD"
+MEGA_CSV = "data/nj/mega_millions.csv"
 
-    print("\nLATEST DRAW: FREQUENCY CHECK (WHITE BALLS)")
+
+def normalize_multiplier(m: str) -> str:
+    if not m:
+        return "N/A"
+    m = m.strip().upper()
+    if m in ("NA", "N/A", "NONE"):
+        return "N/A"
+    digits = re.findall(r"\d+", m)
+    if not digits:
+        return "N/A"
+    return f"{digits[0]}X"
+
+
+def read_mega_draws(csv_file: str):
+    """
+    Reads Mega Millions CSV with columns:
+      - draw_date
+      - white_numbers (5 ints space-separated)
+      - mega_ball
+      - multiplier
+    """
+    draws = []
+    with open(csv_file, newline="", encoding="utf-8") as f:
+        r = csv.DictReader(f)
+        for row in r:
+            white_str = (row.get("white_numbers") or "").strip()
+            mb_str = (row.get("mega_ball") or "").strip()
+            d = (row.get("draw_date") or "").strip()
+            mult = normalize_multiplier(row.get("multiplier", "N/A"))
+
+            if not white_str or not mb_str or not d:
+                continue
+
+            try:
+                white = list(map(int, white_str.split()))
+                mega_ball = int(mb_str)
+                if len(white) != 5:
+                    continue
+            except Exception:
+                continue
+
+            dt = parse_date(d)
+            if dt is None:
+                continue
+
+            draws.append((d, dt, white, mega_ball, mult))
+
+    return draws
+
+
+def classify_bucket(freq: int, hot_min: int, med_min: int) -> str:
+    if freq >= hot_min:
+        return "HOT"
+    if freq >= med_min:
+        return "MEDIUM"
+    return "COLD"
+
+
+def top_n(counter: Counter, n: int = 10):
+    return counter.most_common(n)
+
+
+def main():
+    print("\n===== MEGA MILLIONS =====")
+    print("Looking for:", MEGA_CSV)
+    print("Exists?:", os.path.exists(MEGA_CSV))
+
+    if not os.path.exists(MEGA_CSV):
+        print("❌ ERROR: mega_millions.csv not found.")
+        print("✅ Fix: Ensure src/fetch_nj_latest.py runs and saves to data/nj/mega_millions.csv")
+        return
+
+    draws = read_mega_draws(MEGA_CSV)
+    print("Valid draws parsed:", len(draws))
+
+    if not draws:
+        print("❌ No valid draws found — check CSV headers/values.")
+        return
+
+    draws.sort(key=lambda x: x[1], reverse=True)
+
+    latest_d, _, latest_white, latest_mb, latest_mult = draws[0]
+
+    print("\nLatest 10 draws")
     print("-" * 80)
-    for r in latest_rows:
-        print(f"{r['number']:2d} -> {r['frequency_full_history']} times -> {r['bucket']}")
+    for d, _, w, mb, m in draws[:10]:
+        print(f"{d} | White: {' '.join(map(str, w))} | MB: {mb} | Multiplier: {m}")
 
-    print("\nLATEST DRAW: FREQUENCY CHECK (MEGA BALL)")
+    # Full history frequency
+    white_all, mb_all, mult_all = [], [], []
+    for _, _, w, mb, m in draws:
+        white_all.extend(w)
+        mb_all.append(mb)
+        mult_all.append(m)
+
+    white_full = Counter(white_all)
+    mb_full = Counter(mb_all)
+    mult_full = Counter(mult_all)
+
+    # Last 50 window
+    last_n = 50
+    last_draws = draws[:last_n]
+    white_last, mb_last = [], []
+    for _, _, w, mb, _ in last_draws:
+        white_last.extend(w)
+        mb_last.append(mb)
+
+    white_last_c = Counter(white_last)
+    mb_last_c = Counter(mb_last)
+
+    # Thresholds (tunable)
+    HOT_MIN_WHITE = 210
+    MED_MIN_WHITE = 180
+
+    HOT_MIN_MB = 70
+    MED_MIN_MB = 55
+
+    print("\nLATEST DRAW SUMMARY")
     print("-" * 80)
-    print(f"{latest_mb:2d} -> {latest_mb_freq} times -> {latest_mb_bucket}")
+    print(f"{latest_d} | White: {' '.join(map(str, latest_white))} | MB: {latest_mb} | Multiplier: {latest_mult}")
 
-    print("\nLATEST DRAW MIX LABEL")
+    # Latest draw frequency check
+    mix = Counter()
+
+    print("\nLATEST DRAW: FREQUENCY CHECK (WHITE BALLS) [FULL]")
     print("-" * 80)
-    print(f"{latest_d} | White: {' '.join(map(str, latest_white))} | MB: {latest_mb} | {mix_label}")
+    for num in latest_white:
+        f = white_full.get(num, 0)
+        b = classify_bucket(f, HOT_MIN_WHITE, MED_MIN_WHITE)
+        mix[b] += 1
+        print(f"{num:2d} -> {f} times -> {b}")
 
-    # Save outputs
-    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    mb_freq = mb_full.get(latest_mb, 0)
+    mb_bucket = classify_bucket(mb_freq, HOT_MIN_MB, MED_MIN_MB)
 
-    latest_csv = os.path.join(OUT_DIR, f"latest_draw_frequency_{run_id}.csv")
-    latest_json = os.path.join(OUT_DIR, f"latest_draw_frequency_{run_id}.json")
-    compare_csv = os.path.join(OUT_DIR, f"white_compare_last50_vs_full_{run_id}.csv")
+    print("\nLATEST DRAW: FREQUENCY CHECK (MEGA BALL) [FULL]")
+    print("-" * 80)
+    print(f"{latest_mb:2d} -> {mb_freq} times -> {mb_bucket}")
 
-    write_csv(
-        latest_csv,
-        latest_rows,
-        ["draw_date", "number", "frequency_full_history", "bucket"],
-    )
+    print("\nLATEST DRAW MIX LABEL (WHITE BALLS)")
+    print("-" * 80)
+    print(f"{mix.get('HOT', 0)} HOT | {mix.get('MEDIUM', 0)} MEDIUM | {mix.get('COLD', 0)} COLD")
 
-    payload = {
-        "run_id": run_id,
-        "total_draws_loaded": len(valid_draws),
-        "latest_draw": {
-            "draw_date": latest_d,
-            "white_numbers": latest_white,
-            "mega_ball": latest_mb,
-            "multiplier": latest_mult,
-            "draw_mix_label": mix_label,
-            "white_ball_checks": latest_rows,
-            "mega_ball_check": {
-                "number": latest_mb,
-                "frequency_full_history": latest_mb_freq,
-                "bucket": latest_mb_bucket,
-            },
-        },
-        "thresholds": {
-            "white": {"HOT_MIN": HOT_MIN_WHITE, "MED_MIN": MED_MIN_WHITE},
-            "mega_ball": {"HOT_MIN": HOT_MIN_MB, "MED_MIN": MED_MIN_MB},
-        },
-        "notes": "Descriptive analysis only (not prediction).",
-    }
-    write_json(latest_json, payload)
+    # Top lists
+    print("\nTOP 10 WHITE BALLS (FULL HISTORY)")
+    print("-" * 80)
+    for n, c in top_n(white_full, 10):
+        print(f"{n:2d} -> {c} times")
 
-    # Compare last 50 vs full (white balls 1–70)
-    compare_rows = []
-    for i in range(1, 71):
-        compare_rows.append(
-            {
-                "number": i,
-                "freq_full_history": white_freq_all.get(i, 0),
-                "freq_last_50_draws": white_freq_last.get(i, 0),
-                "delta_last50_minus_full": white_freq_last.get(i, 0) - white_freq_all.get(i, 0),
-            }
-        )
-    write_csv(
-        compare_csv,
-        compare_rows,
-        ["number", "freq_full_history", "freq_last_50_draws", "delta_last50_minus_full"],
-    )
+    print("\nTOP 10 WHITE BALLS (LAST 50 DRAWS)")
+    print("-" * 80)
+    for n, c in top_n(white_last_c, 10):
+        print(f"{n:2d} -> {c} times")
 
-    # Charts
-    white_sorted = sorted(white_freq_all.items(), key=lambda kv: kv[1], reverse=True)
-    x_white = [str(k) for k, _ in white_sorted]
-    y_white = [v for _, v in white_sorted]
-    chart_white_top20 = os.path.join(OUT_DIR, f"chart_white_top20_full_{run_id}.png")
-    plot_bar(
-        x_white,
-        y_white,
-        "Mega Millions White Balls - Top 20 Frequency (Full History)",
-        "Number",
-        "Count",
-        chart_white_top20,
-        top_n=20,
-    )
+    print("\nTOP 10 MEGA BALLS (FULL HISTORY)")
+    print("-" * 80)
+    for n, c in top_n(mb_full, 10):
+        print(f"{n:2d} -> {c} times")
 
-    x_mb = [str(i) for i in range(1, 26)]
-    y_mb = [mega_freq_all.get(i, 0) for i in range(1, 26)]
-    chart_mb = os.path.join(OUT_DIR, f"chart_mega_ball_full_{run_id}.png")
-    plot_bar(
-        x_mb,
-        y_mb,
-        "Mega Millions Mega Ball Frequency (Full History)",
-        "Mega Ball",
-        "Count",
-        chart_mb,
-        top_n=None,
-    )
+    print("\nTOP 10 MEGA BALLS (LAST 50 DRAWS)")
+    print("-" * 80)
+    for n, c in top_n(mb_last_c, 10):
+        print(f"{n:2d} -> {c} times")
 
-    white_last_sorted = sorted(white_freq_last.items(), key=lambda kv: kv[1], reverse=True)
-    x_white_last = [str(k) for k, _ in white_last_sorted]
-    y_white_last = [v for _, v in white_last_sorted]
-    chart_white_last20 = os.path.join(OUT_DIR, f"chart_white_top20_last50_{run_id}.png")
-    plot_bar(
-        x_white_last,
-        y_white_last,
-        "Mega Millions White Balls - Top 20 Frequency (Last 50 Draws)",
-        "Number",
-        "Count",
-        chart_white_last20,
-        top_n=20,
-    )
-
-    summary_json = os.path.join(OUT_DIR, f"summary_{run_id}.json")
-    summary = {
-        "run_id": run_id,
-        "total_draws_loaded": len(valid_draws),
-        "latest_draw_date": latest_d,
-        "latest_draw_white_numbers": latest_white,
-        "latest_draw_mega_ball": latest_mb,
-        "latest_draw_mix_label": mix_label,
-        "files": {
-            "latest_draw_csv": latest_csv,
-            "latest_draw_json": latest_json,
-            "compare_csv": compare_csv,
-            "chart_white_top20_full": chart_white_top20,
-            "chart_mega_ball_full": chart_mb,
-            "chart_white_top20_last50": chart_white_last20,
-        },
-    }
-    write_json(summary_json, summary)
-
-    print("\n✅ Reports saved to:", OUT_DIR)
-    print(" -", latest_csv)
-    print(" -", latest_json)
-    print(" -", compare_csv)
-    print(" -", chart_white_top20)
-    print(" -", chart_mb)
-    print(" -", chart_white_last20)
-    print(" -", summary_json)
+    print("\nTOP MULTIPLIERS (FULL HISTORY)")
+    print("-" * 80)
+    for k, c in mult_full.most_common(5):
+        print(f"{k} -> {c} times")
 
 
 if __name__ == "__main__":
