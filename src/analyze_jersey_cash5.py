@@ -1,12 +1,25 @@
 import os
 import sys
 import csv
+import re
 from collections import Counter
 
 sys.path.append("src")
 from common import parse_date  # noqa: E402
 
 JC5_CSV = "data/nj/jersey_cash5.csv"
+
+
+def normalize_xtra(x: str) -> str:
+    if not x:
+        return "N/A"
+    x = x.strip().upper()
+    if x in ("NA", "N/A", "NONE"):
+        return "N/A"
+    digits = re.findall(r"\d+", x)
+    if not digits:
+        return "N/A"
+    return digits[0]  # "03" -> "03" (we'll display as-is); or make int if you want
 
 
 def classify_bucket(freq: int, hot_min: int, med_min: int) -> str:
@@ -28,7 +41,7 @@ def read_draws(path: str):
         for row in r:
             d = (row.get("draw_date") or "").strip()
             nums = (row.get("numbers") or "").strip()
-            xtra = (row.get("xtra") or "N/A").strip()
+            xtra = normalize_xtra(row.get("xtra") or "N/A")
 
             if not d or not nums:
                 continue
@@ -129,7 +142,12 @@ def main():
     for k, c in xtra_full.most_common():
         print(f"{k} -> {c} times")
 
-    # Full tables like you asked (1–45)
+    print("\nXTRA FREQUENCY (2–5) [FULL]")
+    print("-" * 80)
+    for i in range(2, 6):
+        print(f"{i} -> {xtra_full.get(str(i), 0)} times")
+
+    # Full tables (1–45)
     print("\nNUMBER FREQUENCY (1–45) [FULL]")
     print("-" * 80)
     for i in range(1, 46):
