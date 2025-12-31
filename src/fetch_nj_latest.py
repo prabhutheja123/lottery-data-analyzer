@@ -10,11 +10,11 @@ from pathlib import Path
 POWERBALL_URL = "https://data.ny.gov/api/views/d6yy-54nr/rows.csv?accessType=DOWNLOAD"
 MEGA_URL = "https://data.ny.gov/api/views/5xaw-6ayf/rows.csv?accessType=DOWNLOAD"
 
+# ✅ Jersey Cash 5 (CSV, stable like PB/Mega)
+JERSEY_CASH5_URL = "https://data.ny.gov/api/views/qpqk-8p3g/rows.csv?accessType=DOWNLOAD"
+
 # NJ Lottery official page (Pick-6 page includes recent results + Double Play in HTML)
 PICK6_URL = "https://www.njlottery.com/en-us/drawgames/pick6lotto.html"
-
-# Jersey Cash 5 (NJ) - past results (HTML)
-JERSEY_CASH5_URL = "https://www.lotterypost.com/results/nj/jerseycash5/past"
 
 # ================== PATHS ==================
 OUT_DIR = Path("data/nj")
@@ -26,7 +26,6 @@ PICK6_FILE = OUT_DIR / "pick6.csv"
 PICK6_RAW = OUT_DIR / "pick6_raw.html"
 
 JC5_FILE = OUT_DIR / "jersey_cash5.csv"
-JC5_RAW = OUT_DIR / "jersey_cash5_raw.html"
 
 
 # ================== NETWORK ==================
@@ -97,7 +96,6 @@ def normalize_xtra(x: str) -> str:
     digits = re.findall(r"\d+", x)
     if not digits:
         return "N/A"
-    # keep first number only
     return digits[0]
 
 
@@ -149,7 +147,6 @@ def save_mega(text: str) -> int:
         return 0
 
     reader = csv.DictReader(io.StringIO(text))
-
     if not reader.fieldnames:
         print("⚠️ Mega Millions CSV has no headers.")
         with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
@@ -180,11 +177,55 @@ def save_mega(text: str) -> int:
                 continue
 
             multiplier = normalize_multiplier(multiplier_raw)
-
             w.writerow([draw_date.split("T")[0], " ".join(white_nums), mb[0], multiplier])
             count += 1
 
     print(f"✅ Mega Millions rows written: {count}")
+    return count
+
+
+# ================== SAVE JERSEY CASH 5 (CSV) ==================
+def save_jersey_cash5(text: str) -> int:
+    # Validate CSV
+    if not looks_like_csv(text, ["Draw Date", "Winning Numbers"]):
+        print("⚠️ Jersey Cash 5 response is not a valid CSV (blocked/redirected).")
+        with JC5_FILE.open("w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["draw_date", "numbers", "xtra"])
+        return 0
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        print("⚠️ Jersey Cash 5 CSV has no headers.")
+        with JC5_FILE.open("w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["draw_date", "numbers", "xtra"])
+        return 0
+
+    with JC5_FILE.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["draw_date", "numbers", "xtra"])
+
+        count = 0
+        for r in reader:
+            draw_date = (r.get("Draw Date") or "").split("T")[0].strip()
+            winning = (r.get("Winning Numbers") or "").strip()
+
+            # Some datasets use "XTRA" column name; handle both cases
+            xtra_raw = (r.get("XTRA") or r.get("Xtra") or r.get("xtra") or "").strip()
+
+            if not draw_date or not winning:
+                continue
+
+            nums = re.findall(r"\d+", winning)
+            if len(nums) != 5:
+                continue
+
+            xtra = normalize_xtra(xtra_raw) if xtra_raw else "N/A"
+            w.writerow([draw_date, " ".join(nums), xtra])
+            count += 1
+
+    print(f"✅ Jersey Cash 5 rows written: {count}")
     return count
 
 
@@ -259,100 +300,6 @@ def pick6_cached_has_data(min_bytes: int = 80) -> bool:
         return False
 
 
-# ================== SAVE JERSEY CASH 5 ==================
-def month_to_num(m: str) -> str:
-    m = (m or "").strip().lower()
-    months = {
-        "january": "01", "february": "02", "march": "03", "april": "04",
-        "may": "05", "june": "06", "july": "07", "august": "08",
-        "september": "09", "october": "10", "november": "11", "december": "12",
-    }
-    return months.get(m, "01")
-
-
-def jc5_cached_has_data(min_bytes: int = 80) -> bool:
-    try:
-        return JC5_FILE.exists() and JC5_FILE.stat().st_size >= min_bytes
-    except Exception:
-        return False
-
-
-def save_jersey_cash5(html: str) -> int:
-    """
-    Parse Jersey Cash 5 + XTRA from LotteryPost HTML.
-
-    Output columns:
-      - draw_date (YYYY-MM-DD)
-      - numbers (5 nums, space-separated)
-      - xtra (single number or N/A)
-    """
-    # Load existing rows to avoid duplicates (incremental update)
-    seen = set()
-    existing = []
-    if JC5_FILE.exists():
-        try:
-            with JC5_FILE.open("r", newline="", encoding="utf-8") as f:
-                r = csv.DictReader(f)
-                for row in r:
-                    d = (row.get("draw_date") or "").strip()
-                    nums = (row.get("numbers") or "").strip()
-                    xtra = normalize_xtra(row.get("xtra") or "N/A")
-                    if d and nums:
-                        seen.add((d, nums, xtra))
-                        existing.append({"draw_date": d, "numbers": nums, "xtra": xtra})
-        except Exception:
-            pass
-
-    # Blocks look like: "Tuesday, December 30, 2025"
-    days = r"(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)"
-    block_pat = re.compile(
-        rf"{days},\s+(?P<month>[A-Za-z]+)\s+(?P<day>\d{{1,2}}),\s+(?P<year>\d{{4}})(?P<body>.*?)(?={days},\s+|$)",
-        re.DOTALL | re.IGNORECASE,
-    )
-
-    new_rows = []
-    for m in block_pat.finditer(html or ""):
-        month = m.group("month")
-        day = m.group("day")
-        year = m.group("year")
-        body = m.group("body") or ""
-
-        draw_date = f"{year}-{month_to_num(month)}-{str(day).zfill(2)}"
-
-        # Numbers appear as bullet list items "*" in LotteryPost formatting
-        parts = body.split("Xtra:")
-        nums_part = parts[0]
-        xtra_part = parts[1] if len(parts) > 1 else ""
-
-        nums = re.findall(r"\*\s*(\d{1,2})", nums_part)
-        if len(nums) < 5:
-            continue
-        nums = nums[:5]
-        nums_str = " ".join(nums)
-
-        xtra_nums = re.findall(r"\*\s*(\d{1,2})", xtra_part)
-        xtra = normalize_xtra(xtra_nums[0]) if xtra_nums else "N/A"
-
-        key = (draw_date, nums_str, xtra)
-        if key in seen:
-            continue
-        seen.add(key)
-        new_rows.append({"draw_date": draw_date, "numbers": nums_str, "xtra": xtra})
-
-    # Write merged file (existing + new)
-    all_rows = existing + new_rows
-    with JC5_FILE.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["draw_date", "numbers", "xtra"])
-        w.writeheader()
-        w.writerows(all_rows)
-
-    if (not new_rows) and html:
-        JC5_RAW.write_text(html, encoding="utf-8", errors="replace")
-
-    print(f"✅ Jersey Cash 5 new rows added: {len(new_rows)} (total now: {len(all_rows)})")
-    return len(new_rows)
-
-
 # ================== MAIN ==================
 def main():
     print("=== FETCH NJ LATEST ===")
@@ -370,22 +317,11 @@ def main():
     mega_count = save_mega(mega_text)
     print("✅ Saved:", MEGA_FILE.resolve())
 
-    # Jersey Cash 5
+    # ✅ Jersey Cash 5 (CSV)
     print("Downloading Jersey Cash 5...")
-    jc5_html = download(JERSEY_CASH5_URL)
-    if not jc5_html:
-        if jc5_cached_has_data():
-            print("⚠️ Jersey Cash 5 blocked/empty in CI. Keeping existing cached jersey_cash5.csv (NOT overwriting).")
-            jc5_count = -1
-        else:
-            print("⚠️ Jersey Cash 5 blocked/empty and no cached file found. Creating header-only jersey_cash5.csv.")
-            with JC5_FILE.open("w", newline="", encoding="utf-8") as f:
-                w = csv.writer(f)
-                w.writerow(["draw_date", "numbers", "xtra"])
-            jc5_count = 0
-    else:
-        jc5_count = save_jersey_cash5(jc5_html)
-    print("✅ Jersey Cash 5 file:", JC5_FILE.resolve())
+    jc5_text = download(JERSEY_CASH5_URL)
+    jc5_count = save_jersey_cash5(jc5_text)
+    print("✅ Saved:", JC5_FILE.resolve())
 
     # Pick 6
     print("Downloading Pick-6 (NJ HTML)...")
@@ -412,6 +348,8 @@ def main():
         print("⚠️ Powerball wrote 0 rows (blocked/unavailable).")
     if mega_count == 0:
         print("⚠️ Mega Millions wrote 0 rows (blocked/unavailable).")
+    if jc5_count == 0:
+        print("⚠️ Jersey Cash 5 wrote 0 rows (blocked/unavailable).")
 
     print("=== DONE ===")
     print("Counts:")
