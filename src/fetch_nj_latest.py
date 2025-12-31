@@ -13,6 +13,9 @@ MEGA_URL = "https://data.ny.gov/api/views/5xaw-6ayf/rows.csv?accessType=DOWNLOAD
 # NJ Lottery official page (Pick-6 page includes recent results + Double Play in HTML)
 PICK6_URL = "https://www.njlottery.com/en-us/drawgames/pick6lotto.html"
 
+# Jersey Cash 5 (NJ) - past results (HTML)
+JERSEY_CASH5_URL = "https://www.lotterypost.com/results/nj/jerseycash5/past"
+
 # ================== PATHS ==================
 OUT_DIR = Path("data/nj")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -21,6 +24,9 @@ PB_FILE = OUT_DIR / "powerball.csv"
 MEGA_FILE = OUT_DIR / "mega_millions.csv"
 PICK6_FILE = OUT_DIR / "pick6.csv"
 PICK6_RAW = OUT_DIR / "pick6_raw.html"
+
+JC5_FILE = OUT_DIR / "jersey_cash5.csv"
+JC5_RAW = OUT_DIR / "jersey_cash5_raw.html"
 
 
 # ================== NETWORK ==================
@@ -78,9 +84,25 @@ def normalize_multiplier(m: str) -> str:
     return f"{digits[0]}X"
 
 
+def normalize_xtra(x: str) -> str:
+    """
+    Normalize XTRA to:
+      - "N/A" or a single digit (2/3/4/5 etc)
+    """
+    if not x:
+        return "N/A"
+    x = x.strip().upper()
+    if x in ("NA", "N/A", "NONE"):
+        return "N/A"
+    digits = re.findall(r"\d+", x)
+    if not digits:
+        return "N/A"
+    # keep first number only
+    return digits[0]
+
+
 # ================== SAVE POWERBALL ==================
 def save_powerball(text: str) -> int:
-    # Validate response looks like the expected CSV
     if not looks_like_csv(text, ["Draw Date", "Winning Numbers"]):
         print("⚠️ Powerball response is not a valid CSV (blocked/redirected).")
         with PB_FILE.open("w", newline="", encoding="utf-8") as f:
@@ -119,7 +141,6 @@ def save_powerball(text: str) -> int:
 
 # ================== SAVE MEGA MILLIONS ==================
 def save_mega(text: str) -> int:
-    # Validate response looks like the expected CSV
     if not looks_like_csv(text, ["Draw Date", "Winning Numbers"]):
         print("⚠️ Mega Millions response is not a valid CSV (blocked/redirected).")
         with MEGA_FILE.open("w", newline="", encoding="utf-8") as f:
@@ -150,7 +171,6 @@ def save_mega(text: str) -> int:
             if not draw_date or not winning or not mega_ball:
                 continue
 
-            # Winning Numbers in this dataset = ONLY 5 white balls
             white_nums = re.findall(r"\d+", winning)
             if len(white_nums) != 5:
                 continue
@@ -161,14 +181,7 @@ def save_mega(text: str) -> int:
 
             multiplier = normalize_multiplier(multiplier_raw)
 
-            w.writerow(
-                [
-                    draw_date.split("T")[0],
-                    " ".join(white_nums),
-                    mb[0],
-                    multiplier,
-                ]
-            )
+            w.writerow([draw_date.split("T")[0], " ".join(white_nums), mb[0], multiplier])
             count += 1
 
     print(f"✅ Mega Millions rows written: {count}")
@@ -177,17 +190,6 @@ def save_mega(text: str) -> int:
 
 # ================== SAVE PICK 6 ==================
 def save_pick6(html: str) -> int:
-    """
-    Parse Pick-6 + Double Play from the NJ Lottery HTML page.
-
-    Output columns:
-      - draw_date (YYYY-MM-DD)
-      - main_numbers (6 nums)
-      - double_play_numbers (6 nums)
-
-    If parsing fails or returns 0 rows, save raw HTML for debugging:
-      data/nj/pick6_raw.html
-    """
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     def to_iso(mmddyyyy: str) -> str:
@@ -251,14 +253,104 @@ def save_pick6(html: str) -> int:
 
 
 def pick6_cached_has_data(min_bytes: int = 80) -> bool:
-    """
-    If pick6.csv already exists and has more than just a header,
-    keep it when NJ site is blocked.
-    """
     try:
         return PICK6_FILE.exists() and PICK6_FILE.stat().st_size >= min_bytes
     except Exception:
         return False
+
+
+# ================== SAVE JERSEY CASH 5 ==================
+def month_to_num(m: str) -> str:
+    m = (m or "").strip().lower()
+    months = {
+        "january": "01", "february": "02", "march": "03", "april": "04",
+        "may": "05", "june": "06", "july": "07", "august": "08",
+        "september": "09", "october": "10", "november": "11", "december": "12",
+    }
+    return months.get(m, "01")
+
+
+def jc5_cached_has_data(min_bytes: int = 80) -> bool:
+    try:
+        return JC5_FILE.exists() and JC5_FILE.stat().st_size >= min_bytes
+    except Exception:
+        return False
+
+
+def save_jersey_cash5(html: str) -> int:
+    """
+    Parse Jersey Cash 5 + XTRA from LotteryPost HTML.
+
+    Output columns:
+      - draw_date (YYYY-MM-DD)
+      - numbers (5 nums, space-separated)
+      - xtra (single number or N/A)
+    """
+    # Load existing rows to avoid duplicates (incremental update)
+    seen = set()
+    existing = []
+    if JC5_FILE.exists():
+        try:
+            with JC5_FILE.open("r", newline="", encoding="utf-8") as f:
+                r = csv.DictReader(f)
+                for row in r:
+                    d = (row.get("draw_date") or "").strip()
+                    nums = (row.get("numbers") or "").strip()
+                    xtra = normalize_xtra(row.get("xtra") or "N/A")
+                    if d and nums:
+                        seen.add((d, nums, xtra))
+                        existing.append({"draw_date": d, "numbers": nums, "xtra": xtra})
+        except Exception:
+            pass
+
+    # Blocks look like: "Tuesday, December 30, 2025"
+    days = r"(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)"
+    block_pat = re.compile(
+        rf"{days},\s+(?P<month>[A-Za-z]+)\s+(?P<day>\d{{1,2}}),\s+(?P<year>\d{{4}})(?P<body>.*?)(?={days},\s+|$)",
+        re.DOTALL | re.IGNORECASE,
+    )
+
+    new_rows = []
+    for m in block_pat.finditer(html or ""):
+        month = m.group("month")
+        day = m.group("day")
+        year = m.group("year")
+        body = m.group("body") or ""
+
+        draw_date = f"{year}-{month_to_num(month)}-{str(day).zfill(2)}"
+
+        # Numbers appear as bullet list items "*" in LotteryPost formatting
+        parts = body.split("Xtra:")
+        nums_part = parts[0]
+        xtra_part = parts[1] if len(parts) > 1 else ""
+
+        nums = re.findall(r"\*\s*(\d{1,2})", nums_part)
+        if len(nums) < 5:
+            continue
+        nums = nums[:5]
+        nums_str = " ".join(nums)
+
+        xtra_nums = re.findall(r"\*\s*(\d{1,2})", xtra_part)
+        xtra = normalize_xtra(xtra_nums[0]) if xtra_nums else "N/A"
+
+        key = (draw_date, nums_str, xtra)
+        if key in seen:
+            continue
+        seen.add(key)
+        new_rows.append({"draw_date": draw_date, "numbers": nums_str, "xtra": xtra})
+
+    # Write merged file (existing + new)
+    all_rows = existing + new_rows
+    with JC5_FILE.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=["draw_date", "numbers", "xtra"])
+        w.writeheader()
+        w.writerows(all_rows)
+
+    if (not new_rows) and html:
+        JC5_RAW.write_text(html, encoding="utf-8", errors="replace")
+
+    print(f"✅ Jersey Cash 5 new rows added: {len(new_rows)} (total now: {len(all_rows)})")
+    return len(new_rows)
 
 
 # ================== MAIN ==================
@@ -278,12 +370,28 @@ def main():
     mega_count = save_mega(mega_text)
     print("✅ Saved:", MEGA_FILE.resolve())
 
-    # Pick 6 (blocked in GitHub Actions often)
+    # Jersey Cash 5
+    print("Downloading Jersey Cash 5...")
+    jc5_html = download(JERSEY_CASH5_URL)
+    if not jc5_html:
+        if jc5_cached_has_data():
+            print("⚠️ Jersey Cash 5 blocked/empty in CI. Keeping existing cached jersey_cash5.csv (NOT overwriting).")
+            jc5_count = -1
+        else:
+            print("⚠️ Jersey Cash 5 blocked/empty and no cached file found. Creating header-only jersey_cash5.csv.")
+            with JC5_FILE.open("w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(["draw_date", "numbers", "xtra"])
+            jc5_count = 0
+    else:
+        jc5_count = save_jersey_cash5(jc5_html)
+    print("✅ Jersey Cash 5 file:", JC5_FILE.resolve())
+
+    # Pick 6
     print("Downloading Pick-6 (NJ HTML)...")
     pick6_html = download(PICK6_URL)
 
     if not pick6_html:
-        # IMPORTANT: keep cached CSV if it already has data
         if pick6_cached_has_data():
             print("⚠️ Pick-6 blocked/empty in CI. Keeping existing cached pick6.csv (NOT overwriting).")
             pick6_count = -1
@@ -294,16 +402,12 @@ def main():
                 w.writerow(["draw_date", "main_numbers", "double_play_numbers"])
             pick6_count = 0
     else:
-        # If HTML downloaded, attempt parse
         pick6_count = save_pick6(pick6_html)
-
-        # If we got 0 rows but a cached file exists (from previous commits), keep it
         if pick6_count == 0 and pick6_cached_has_data():
             print("⚠️ Pick-6 parse returned 0 but cached pick6.csv exists. Keeping cached file.")
 
     print("✅ Pick-6 file:", PICK6_FILE.resolve())
 
-    # Do NOT fail the pipeline here; analysis scripts will decide whether to skip.
     if pb_count == 0:
         print("⚠️ Powerball wrote 0 rows (blocked/unavailable).")
     if mega_count == 0:
@@ -313,6 +417,7 @@ def main():
     print("Counts:")
     print(" - Powerball:", pb_count)
     print(" - Mega Millions:", mega_count)
+    print(" - Jersey Cash 5:", jc5_count)
     print(" - Pick-6:", pick6_count)
 
     print("Files created in data/nj:")
