@@ -9,6 +9,9 @@ from common import parse_date  # noqa: E402
 
 MEGA_CSV = "data/nj/mega_millions.csv"
 
+LATEST_N = 20
+LAST_N_FOR_TOP = 50
+
 
 def normalize_multiplier(m: str) -> str:
     if not m:
@@ -52,12 +55,41 @@ def read_mega_draws(csv_file: str):
     return draws
 
 
-def classify_bucket(freq: int, hot_min: int, med_min: int) -> str:
-    if freq >= hot_min:
+# ------------------ 6-level buckets ------------------
+def classify_white_6(freq: int) -> str:
+    # Uses the same FULL-history ranges you validated earlier.
+    if freq >= 225:
+        return "VERY HOT"
+    if 210 <= freq <= 224:
         return "HOT"
-    if freq >= med_min:
+    if 195 <= freq <= 209:
         return "MEDIUM"
-    return "COLD"
+    if 180 <= freq <= 194:
+        return "LESS MEDIUM"
+    if 150 <= freq <= 179:
+        return "LOW"
+    return "VERY LOW"
+
+
+def classify_mb_6(freq: int, max_freq: int) -> str:
+    """
+    Mega ball frequencies are much smaller (1–25),
+    so we classify relative to FULL-history max frequency.
+    """
+    if max_freq <= 0:
+        return "VERY LOW"
+
+    if freq >= 0.85 * max_freq:
+        return "VERY HOT"
+    if freq >= 0.70 * max_freq:
+        return "HOT"
+    if freq >= 0.55 * max_freq:
+        return "MEDIUM"
+    if freq >= 0.40 * max_freq:
+        return "LESS MEDIUM"
+    if freq >= 0.25 * max_freq:
+        return "LOW"
+    return "VERY LOW"
 
 
 def top_n(counter: Counter, n: int = 10):
@@ -83,11 +115,10 @@ def main():
 
     draws.sort(key=lambda x: x[1], reverse=True)
 
-    latest_d, _, latest_white, latest_mb, latest_mult = draws[0]
-
-    print("\nLatest 10 draws")
+    # Show latest 20 draws (was 10)
+    print(f"\nLatest {LATEST_N} draws")
     print("-" * 80)
-    for d, _, w, mb, m in draws[:10]:
+    for d, _, w, mb, m in draws[:LATEST_N]:
         print(f"{d} | White: {' '.join(map(str, w))} | MB: {mb} | Multiplier: {m}")
 
     # Full history frequency
@@ -101,9 +132,10 @@ def main():
     mb_full = Counter(mb_all)
     mult_full = Counter(mult_all)
 
-    # Last 50 window
-    last_n = 50
-    last_draws = draws[:last_n]
+    mb_full_max = max(mb_full.values()) if mb_full else 0
+
+    # Last 50 window (unchanged)
+    last_draws = draws[:LAST_N_FOR_TOP]
     white_last, mb_last = [], []
     for _, _, w, mb, _ in last_draws:
         white_last.extend(w)
@@ -112,45 +144,46 @@ def main():
     white_last_c = Counter(white_last)
     mb_last_c = Counter(mb_last)
 
-    # Thresholds (tunable)
-    HOT_MIN_WHITE = 210
-    MED_MIN_WHITE = 180
-    HOT_MIN_MB = 70
-    MED_MIN_MB = 55
-
-    print("\nLATEST DRAW SUMMARY")
+    # ---- New: For EACH of the latest 20 draws, show FULL-history counts + 6 labels ----
+    print(f"\nLAST {LATEST_N} DRAWS: FREQUENCY CHECK (WHITE BALLS) [FULL]")
     print("-" * 80)
-    print(f"{latest_d} | White: {' '.join(map(str, latest_white))} | MB: {latest_mb} | Multiplier: {latest_mult}")
 
-    # Latest draw frequency check
-    mix = Counter()
+    for d, _, w, mb, m in draws[:LATEST_N]:
+        print(f"{d} | White: {' '.join(map(str, w))} | MB: {mb} | Multiplier: {m}")
 
-    print("\nLATEST DRAW: FREQUENCY CHECK (WHITE BALLS) [FULL]")
+        mix6 = Counter()
+        for num in w:
+            f = white_full.get(num, 0)  # FULL history
+            b = classify_white_6(f)
+            mix6[b] += 1
+            print(f"{num:2d} -> {f} times -> {b}")
+
+        print("\nMIX LABEL (WHITE BALLS)")
+        print(f"{mix6.get('VERY HOT', 0)} VERY HOT | "
+              f"{mix6.get('HOT', 0)} HOT | "
+              f"{mix6.get('MEDIUM', 0)} MEDIUM | "
+              f"{mix6.get('LESS MEDIUM', 0)} LESS MEDIUM | "
+              f"{mix6.get('LOW', 0)} LOW | "
+              f"{mix6.get('VERY LOW', 0)} VERY LOW")
+        print("-" * 35)
+
+    print(f"\nLAST {LATEST_N} DRAWS: FREQUENCY CHECK (MEGA BALL) [FULL]")
     print("-" * 80)
-    for num in latest_white:
-        f = white_full.get(num, 0)
-        b = classify_bucket(f, HOT_MIN_WHITE, MED_MIN_WHITE)
-        mix[b] += 1
-        print(f"{num:2d} -> {f} times -> {b}")
 
-    mb_freq = mb_full.get(latest_mb, 0)
-    mb_bucket = classify_bucket(mb_freq, HOT_MIN_MB, MED_MIN_MB)
+    for d, _, w, mb, m in draws[:LATEST_N]:
+        mb_freq = mb_full.get(mb, 0)  # FULL history
+        mb_bucket = classify_mb_6(mb_freq, mb_full_max)
+        print(f"{d} | MB: {mb} | Multiplier: {m}")
+        print(f"{mb:2d} -> {mb_freq} times -> {mb_bucket}")
+        print("-" * 35)
 
-    print("\nLATEST DRAW: FREQUENCY CHECK (MEGA BALL) [FULL]")
-    print("-" * 80)
-    print(f"{latest_mb:2d} -> {mb_freq} times -> {mb_bucket}")
-
-    print("\nLATEST DRAW MIX LABEL (WHITE BALLS)")
-    print("-" * 80)
-    print(f"{mix.get('HOT', 0)} HOT | {mix.get('MEDIUM', 0)} MEDIUM | {mix.get('COLD', 0)} COLD")
-
-    # Top lists
+    # ---- Top lists (unchanged) ----
     print("\nTOP 10 WHITE BALLS (FULL HISTORY)")
     print("-" * 80)
     for n, c in top_n(white_full, 10):
         print(f"{n:2d} -> {c} times")
 
-    print("\nTOP 10 WHITE BALLS (LAST 50 DRAWS)")
+    print(f"\nTOP 10 WHITE BALLS (LAST {LAST_N_FOR_TOP} DRAWS)")
     print("-" * 80)
     for n, c in top_n(white_last_c, 10):
         print(f"{n:2d} -> {c} times")
@@ -160,7 +193,7 @@ def main():
     for n, c in top_n(mb_full, 10):
         print(f"{n:2d} -> {c} times")
 
-    print("\nTOP 10 MEGA BALLS (LAST 50 DRAWS)")
+    print(f"\nTOP 10 MEGA BALLS (LAST {LAST_N_FOR_TOP} DRAWS)")
     print("-" * 80)
     for n, c in top_n(mb_last_c, 10):
         print(f"{n:2d} -> {c} times")
@@ -170,7 +203,7 @@ def main():
     for k, c in mult_full.most_common(5):
         print(f"{k} -> {c} times")
 
-    # ✅ FULL TABLES YOU ASKED FOR
+    # ---- FULL tables (unchanged) ----
     print("\nWHITE BALL FREQUENCY (1–70) [FULL]")
     print("-" * 80)
     for i in range(1, 71):
