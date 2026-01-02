@@ -7,13 +7,43 @@ from common import parse_date, read_csv  # noqa: E402
 
 PB_CSV = "data/nj/powerball.csv"
 
+LATEST_N = 20
+LAST_N_FOR_TOP = 50
 
-def classify_bucket(freq: int, hot_min: int, med_min: int) -> str:
-    if freq >= hot_min:
+
+# ------------------ 6-level buckets ------------------
+# White balls use your FULL frequency-based ranges (1–69).
+def classify_white_6(freq: int) -> str:
+    if freq >= 225:
+        return "VERY HOT"
+    if 210 <= freq <= 224:
         return "HOT"
-    if freq >= med_min:
+    if 195 <= freq <= 209:
         return "MEDIUM"
-    return "COLD"
+    if 180 <= freq <= 194:
+        return "LESS MEDIUM"
+    if 150 <= freq <= 179:
+        return "LOW"
+    return "VERY LOW"
+
+
+# Powerball (1–26) has smaller counts, so we classify relative to max freq in FULL history.
+def classify_pb_6(freq: int, max_freq: int) -> str:
+    if max_freq <= 0:
+        return "VERY LOW"
+
+    # relative bands (tuned for small ranges like 1–26)
+    if freq >= 0.85 * max_freq:
+        return "VERY HOT"
+    if freq >= 0.70 * max_freq:
+        return "HOT"
+    if freq >= 0.55 * max_freq:
+        return "MEDIUM"
+    if freq >= 0.40 * max_freq:
+        return "LESS MEDIUM"
+    if freq >= 0.25 * max_freq:
+        return "LOW"
+    return "VERY LOW"
 
 
 def top_n(counter: Counter, n: int = 10):
@@ -50,7 +80,7 @@ def main():
                 bad_rows += 1
                 continue
 
-            dt = parse_date(draw_date)  # can be None if bad format (with our updated common.py)
+            dt = parse_date(draw_date)
             if dt is None:
                 bad_rows += 1
                 continue
@@ -58,7 +88,6 @@ def main():
             white = list(map(int, white_str.split()))
             pb = int(pb_str)
 
-            # Powerball has 5 white balls
             if len(white) != 5:
                 bad_rows += 1
                 continue
@@ -76,18 +105,16 @@ def main():
         print("✅ Fix: Inspect CSV headers/values in data/nj/powerball.csv")
         return
 
-    # Sort by parsed datetime
+    # Sort newest first
     draws.sort(key=lambda x: x[1], reverse=True)
 
-    # Latest draw
-    latest_date, _, latest_white, latest_pb = draws[0]
-
-    print("\nLatest 10 draws")
+    # Show latest 20 draws (was 10)
+    print(f"\nLatest {LATEST_N} draws")
     print("-" * 60)
-    for d, _, w, pb in draws[:10]:
-        print(f"{d} | White: {' '.join(map(str, w))} | PB: {pb}")
+    for d, _, w, pb in draws[:LATEST_N]:
+        print(f"{d} | White: {' '.join(map(str, w))} | PB: {pb} | Multiplier: N/A")
 
-    # Build full-history frequency
+    # Build FULL-history frequency
     white_all, pb_all = [], []
     for _, _, w, pb in draws:
         white_all.extend(w)
@@ -95,10 +122,10 @@ def main():
 
     white_full = Counter(white_all)
     pb_full = Counter(pb_all)
+    pb_full_max = max(pb_full.values()) if pb_full else 0
 
-    # Rolling window (last 50 draws)
-    last_n = 50
-    last_draws = draws[:last_n]
+    # Rolling window (last 50 draws) — unchanged
+    last_draws = draws[:LAST_N_FOR_TOP]
     white_last, pb_last = [], []
     for _, _, w, pb in last_draws:
         white_last.extend(w)
@@ -107,43 +134,40 @@ def main():
     white_last_c = Counter(white_last)
     pb_last_c = Counter(pb_last)
 
-    # ---- Buckets (thresholds) ----
-    # White balls range 1–69, counts depend on dataset size.
-    # These are simple defaults; we can tune later if needed.
-    HOT_MIN_WHITE = 210
-    MED_MIN_WHITE = 180
-
-    # Powerball 1–26 appears less frequently; lower thresholds.
-    HOT_MIN_PB = 70
-    MED_MIN_PB = 55
-
-    # ---- Latest draw frequency check (FULL history) ----
-    mix = Counter()
-
-    print("\nLATEST DRAW SUMMARY")
+    # ---- New: frequency check for EACH of the latest 20 draws (FULL counts) ----
+    print(f"\nLAST {LATEST_N} DRAWS: FREQUENCY CHECK (WHITE BALLS) [FULL]")
     print("-" * 60)
-    print(f"{latest_date} | White: {' '.join(map(str, latest_white))} | PB: {latest_pb}")
 
-    print("\nLATEST DRAW: FREQUENCY CHECK (WHITE BALLS) [FULL]")
+    for d, _, w, pb in draws[:LATEST_N]:
+        print(f"{d} | White: {' '.join(map(str, w))} | PB: {pb} | Multiplier: N/A")
+
+        mix6 = Counter()
+        for num in w:
+            f = white_full.get(num, 0)  # FULL history count
+            b = classify_white_6(f)
+            mix6[b] += 1
+            print(f"{num:2d} -> {f} times -> {b}")
+
+        print("\nMIX LABEL (WHITE BALLS)")
+        print(f"{mix6.get('VERY HOT', 0)} VERY HOT | "
+              f"{mix6.get('HOT', 0)} HOT | "
+              f"{mix6.get('MEDIUM', 0)} MEDIUM | "
+              f"{mix6.get('LESS MEDIUM', 0)} LESS MEDIUM | "
+              f"{mix6.get('LOW', 0)} LOW | "
+              f"{mix6.get('VERY LOW', 0)} VERY LOW")
+        print("-" * 35)
+
+    print(f"\nLAST {LATEST_N} DRAWS: FREQUENCY CHECK (POWERBALL) [FULL]")
     print("-" * 60)
-    for num in latest_white:
-        f = white_full.get(num, 0)
-        b = classify_bucket(f, HOT_MIN_WHITE, MED_MIN_WHITE)
-        mix[b] += 1
-        print(f"{num:2d} -> {f} times -> {b}")
 
-    pb_freq = pb_full.get(latest_pb, 0)
-    pb_bucket = classify_bucket(pb_freq, HOT_MIN_PB, MED_MIN_PB)
+    for d, _, w, pb in draws[:LATEST_N]:
+        pb_freq = pb_full.get(pb, 0)  # FULL history count
+        pb_bucket = classify_pb_6(pb_freq, pb_full_max)
+        print(f"{d} | PB: {pb} | Multiplier: N/A")
+        print(f"{pb:2d} -> {pb_freq} times -> {pb_bucket}")
+        print("-" * 35)
 
-    print("\nLATEST DRAW: FREQUENCY CHECK (POWERBALL) [FULL]")
-    print("-" * 60)
-    print(f"{latest_pb:2d} -> {pb_freq} times -> {pb_bucket}")
-
-    print("\nLATEST DRAW MIX LABEL (WHITE BALLS)")
-    print("-" * 60)
-    print(f"{mix.get('HOT', 0)} HOT | {mix.get('MEDIUM', 0)} MEDIUM | {mix.get('COLD', 0)} COLD")
-
-    # ---- Top lists (Full vs Last 50) ----
+    # ---- Top lists (Full vs Last 50) — unchanged ----
     print("\nTOP 10 WHITE BALLS (FULL HISTORY)")
     print("-" * 60)
     for n, c in top_n(white_full, 10):
@@ -164,7 +188,7 @@ def main():
     for n, c in top_n(pb_last_c, 10):
         print(f"{n:2d} -> {c} times")
 
-    # Optional: keep your full distribution prints (comment out if too long)
+    # ---- Full distributions — unchanged ----
     print("\nWHITE BALL FREQUENCY (1–69) [FULL]")
     print("-" * 60)
     for i in range(1, 70):
